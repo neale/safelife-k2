@@ -32,6 +32,9 @@ class WrapperInit(Wrapper):
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
         super().__init__(env)
 
+        for env in envs:
+            env.tf_logger = self.logger
+
 
 class BasicSafeLifeWrapper(WrapperInit):
     """
@@ -132,6 +135,13 @@ class BasicSafeLifeWrapper(WrapperInit):
             [self.game.agent_loc], self.movement_bonus_period)
         return obs
 
+class ContEnv(WrapperInit):
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        done = info.get('times_up', done)
+
+        return obs, reward, done, info
 
 class SafeLifeRecorder(video_recorder.VideoRecorder):
     """

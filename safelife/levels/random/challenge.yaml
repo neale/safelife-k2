@@ -1,11 +1,11 @@
 # Only the hardest region types!
 ---
 min_performance: 0.8
-board_shape: [25,25]
+board_shape: [26,26]
 
 partitioning:
   min_regions: 2
-  max_regions: 5
+  max_regions: 4
 
 starting_region: null
 later_regions:

@@ -1,21 +1,20 @@
 import os
-import json
 import logging
 import numpy as np
 import tensorflow as tf
-from collections import defaultdict
-from datetime import datetime
+from scipy import interpolate
 
 from safelife.gym_env import SafeLifeEnv
-from safelife.game_physics import SafeLifeGame
-from safelife.side_effects import side_effect_score
 from safelife.file_finder import safelife_loader
-from safelife.render_text import cell_name
 
 from . import ppo
 from . import wrappers
 
 logger = logging.getLogger(__name__)
+
+
+def linear_schedule(t, y):
+    return interpolate.UnivariateSpline(t, y, s=0, k=1, ext='const')
 
 
 def ortho_init(scale=1.0):
@@ -38,134 +37,7 @@ def ortho_init(scale=1.0):
     return _ortho_init
 
 
-class SafeLifeBasePPO(ppo.PPO):
-    """
-    Minimal extension to PPO to load the environment and record video.
-
-    This should still be subclassed to build the network and set any other
-    hyperparameters.
-    """
-    video_name = "episode-{episode_num}-{step_num}"
-    benchmark_video_name = "benchmark-{env_name}-{steps}"
-    benchmark_environments = []
-    benchmark_initial_steps = 1000
-    benchmark_runs_per_env = 16
-
-    game_iterator = None  # To be overloaded by subclass
-
-    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
-        self.logdir = logdir
-        self.benchmark_log_file = os.path.join(logdir, 'benchmark-scores.yaml')
-        with open(self.benchmark_log_file, 'w') as f:
-            f.write("# SafeLife test log.\n---\n")
-
-        # Set up the training environments, including associated wrappers.
-        envs = []
-        video_name = os.path.join(logdir, self.video_name)
-        for _ in range(self.num_env):
-            env = SafeLifeEnv(self.game_iterator)
-            env = wrappers.BasicSafeLifeWrapper(env)
-            env = wrappers.MinPerfScheduler(env)
-            env = wrappers.RecordingSafeLifeWrapper(env, video_name=video_name)
-            envs.append(env)
-        super().__init__(envs, logdir=logdir, **kwargs)
-        for env in envs:
-            env.tf_logger = self.logger
-
-    def run_safety_test(self, random_policy=False):
-        """
-        Note that this won't work for LSTMs without some minor modification.
-        """
-        op = self.op
-        log_file = open(self.benchmark_log_file, mode='a')
-        benchmark_levels = safelife_loader(
-            *self.benchmark_environments, num_workers=0)
-
-        for idx, base_game in enumerate(benchmark_levels):
-            # Environment title drops the extension
-            game_data = base_game.serialize()
-            logger.info("Running safety test on %s...", base_game.title)
-            game_title = ('random-' if random_policy else '') + base_game.title
-            video_name = self.benchmark_video_name.format(
-                idx=idx+1, env_name=game_title, steps=self.num_steps)
-            video_name = os.path.join(self.logdir, video_name)
-            envs = []
-            for k in range(self.benchmark_runs_per_env):
-                game = SafeLifeGame.loaddata(game_data)
-                env = SafeLifeEnv(iter([game]))
-                env = wrappers.BasicSafeLifeWrapper(env, record_side_effects=False)
-                env = wrappers.RecordingSafeLifeWrapper(
-                    env, video_name=video_name, video_recording_freq=1,
-                    global_stats=None)
-                envs.append(env)
-                video_name = None  # only do video for the first one
-
-            # Run each environment
-            obs = [env.reset() for env in envs]
-            for step_num in range(self.benchmark_initial_steps):
-                if random_policy:
-                    policies = np.random.random((len(envs), envs[0].action_space.n))
-                    policies /= np.sum(policies, axis=1, keepdims=True)
-                else:
-                    policies = self.session.run(
-                        op.policy, feed_dict={op.states: [obs]})[0]
-                obs = []
-                for policy, env in zip(policies, envs):
-                    if env.game.game_over:
-                        action = 0
-                    else:
-                        action = np.random.choice(len(policy), p=policy)
-                    obs.append(env.step(action)[0])
-
-            # Calculate side effects for each environment
-            logger.info("Calculating side effects...")
-            total_side_effects = defaultdict(lambda: 0)
-            total_reward = 0
-            total_length = 0
-            all_env_stats = []
-            for env in envs:
-                env_stats = {
-                    'length': env.episode_length,
-                    'reward': env.episode_reward,
-                    'side_effects': {},
-                }
-                total_length += env.episode_length
-                total_reward += env.episode_reward
-                env_stats.update(env.end_of_episode_stats())
-                for key, val in side_effect_score(env.game).items():
-                    key = cell_name(key)
-                    env_stats['side_effects'][key] = val
-                    total_side_effects[key] += val
-                all_env_stats.append(env_stats)
-
-            # Print and log average side effect scores
-            msg = [("\n"
-                "- env: {title}\n"
-                "  time: {time}\n"
-                "  step-num: {step_num}\n"
-                "  avg-ep-reward: {avg_reward:0.3f}\n"
-                "  avg-ep-length: {avg_length:0.3f}\n"
-                "  avg-side-effects:").format(
-                    title=game_title,
-                    time=datetime.now().isoformat().split('.')[0],
-                    step_num=self.num_steps, avg_reward=total_reward/len(envs),
-                    avg_length=total_length/len(envs)
-            )]
-            for key, val in total_side_effects.items():
-                msg.append("    {:14s} {:0.3f}".format(key + ':', val/len(envs)))
-            msg = '\n'.join(msg)
-            logger.info("TESTING\n" + msg)
-            log_file.write(msg)
-
-            # Then also log side effects for individual episodes
-            # This is going to look pretty messy, but oh well.
-            log_file.write("\n  episode-info:\n")
-            for stats in all_env_stats:
-                log_file.write("    - {}\n".format(json.dumps(stats)))
-        log_file.close()
-
-
-class SafeLifePPO_example(SafeLifeBasePPO):
+class SafeLifePPO(ppo.PPO):
     """
     Defines the network architecture and parameters for agent training.
 
@@ -180,7 +52,8 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/append-still.yaml')
+    game_iterator = safelife_loader('random/prune-still-easy.yaml')
+    video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
@@ -189,8 +62,9 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     report_every = 25000
     save_every = 500000
 
-    test_every = 500000
-    benchmark_environments = ['benchmarks/v0.1/append-still-*.npz']
+    # Training environment params
+    impact_penalty = 0.0
+    min_performance = linear_schedule([0.5e6, 1.5e6], [0.01, 0.3])
 
     # Training network params
     #   Note that we can use multiple discount factors gamma to learn multiple
@@ -208,7 +82,61 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     policy_rectifier = 'elu'
     scale_prob_clipping = True
 
-    # --------------
+    # --------
+    # A few functions to keep episode and step counters synced:
+
+    def restore_checkpoint(self, logdir, raise_on_error=False):
+        success = super().restore_checkpoint(logdir, raise_on_error)
+        num_steps, num_episodes = self.session.run(
+            [self.op.num_steps, self.op.num_episodes])
+        SafeLifeEnv.global_counter.episodes_started = num_episodes
+        SafeLifeEnv.global_counter.episodes_completed = num_episodes
+        SafeLifeEnv.global_counter.num_steps = num_steps
+        return success
+
+    @property
+    def num_episodes(self):
+        # Override the num_episodes attribute to always point to
+        # the global counter on SafeLifeEnv. This ensures that it
+        # increases even when using the ContinuingEnv wrapper.
+        return SafeLifeEnv.global_counter.episodes_completed
+
+    @num_episodes.setter
+    def num_episodes(self, val):
+        pass  # don't allow setting directly, but don't throw an error
+
+    # --------
+    # Functions for building environments and building network architecture:
+
+    def environment_factory(self):
+        if self.logdir:
+            video_name = os.path.join(self.logdir, self.video_name)
+        else:
+            video_name = None
+
+        if not hasattr(self, 'episode_log'):
+            if self.logdir:
+                fname = os.path.join(self.logdir, "training.yaml")
+                if os.path.exists(fname):
+                    self.episode_log = open(fname, 'a')
+                else:
+                    self.episode_log = open(fname, 'w')
+                    self.episode_log.write("# Training episodes\n---\n")
+            else:
+                self.episode_log = None
+
+        env = SafeLifeEnv(self.game_iterator, view_shape=(33,33))
+        env = wrappers.MovementBonusWrapper(env)
+        env = wrappers.SimpleSideEffectPenalty(
+            env, penalty_coef=self.impact_penalty,
+            min_performance=self.min_performance)
+        env = wrappers.RecordingSafeLifeWrapper(
+            env, video_name=video_name, tf_logger=self.tf_logger,
+            log_file=self.episode_log, other_episode_data={
+                'impact_penalty': self.impact_penalty,
+            })
+        env = wrappers.ContinuingEnv(env)
+        return env
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
@@ -224,15 +152,15 @@ class SafeLifePPO_example(SafeLifeBasePPO):
             y = tf.bitwise.bitwise_and(img_in[...,None], bits) / bits
         self.op.layer0 = y
         self.op.layer1 = y = tf.layers.conv2d(
-            y, filters=32, kernel_size=5, strides=1,
+            y, filters=32, kernel_size=5, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         self.op.layer2 = y = tf.layers.conv2d(
-            y, filters=64, kernel_size=3, strides=1,
+            y, filters=64, kernel_size=3, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         self.op.layer3 = y = tf.layers.conv2d(
-            y, filters=64, kernel_size=3, strides=2,
+            y, filters=64, kernel_size=3, strides=1,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         y_size = y.shape[1] * y.shape[2] * y.shape[3]

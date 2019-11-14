@@ -38,6 +38,7 @@ sprites = {
     CellTypes.parasite: load_sprite(2, 4),
     CellTypes.weed: load_sprite(1, 2),
     CellTypes.spawner: load_sprite(3, 0),
+    CellTypes.hard_spawner: load_sprite(3, 2),
     CellTypes.level_exit: load_sprite(3, 1),
     CellTypes.fountain: load_sprite(2, 1),
 }
@@ -76,6 +77,7 @@ cell_array = np.array([
     [CellTypes.parasite, (5*2 + 4) + 1],
     [CellTypes.weed, (5*1 + 2) + 1],
     [CellTypes.spawner, (5*3 + 0) + 1],
+    [CellTypes.hard_spawner, (5*3 + 2) + 1],
     [CellTypes.level_exit, (5*3 + 1) + 1],
     [CellTypes.fountain, (5*2 + 1) + 1],
 ])
@@ -153,7 +155,7 @@ def render_game(game, view_size=None, edit_mode=None):
     return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
-def render_file(fname, fps=30):
+def render_file(fname, fps=30, data=None):
     """
     Load a saved SafeLifeGame file and render it as a png or gif.
 
@@ -166,10 +168,18 @@ def render_file(fname, fps=30):
     fps : float
         Frames per second for gif animation.
     """
-    data = np.load(fname)
+    bare_fname = '.'.join(fname.split('.')[:-1])
+    if data is None:
+        data = np.load(fname)
+
+    if hasattr(data, 'keys') and 'levels' in data:
+        os.makedirs(bare_fname, exist_ok=True)
+        for level in data['levels']:
+            render_file(os.path.join(bare_fname, level['name']), fps, level)
+        return
+
     rgb_array = render_board(
         data['board'], data['goals'], data['orientation'][..., None, None])
-    bare_fname = '.'.join(fname.split('.')[:-1])
     if rgb_array.ndim == 3:
         imageio.imwrite(bare_fname+'.png', rgb_array)
     elif rgb_array.ndim == 4:

@@ -25,7 +25,7 @@ def env_factory(env_config):
     # env = gym.make('safelife-%s-v1' % args.env)
     env = gym_env.SafeLifeEnv(file_finder.safelife_loader('random/' + args.level))
     env = wrappers.BasicSafeLifeWrapper(env)
-    env = wrappers.ContEnv(env)
+    # env = wrappers.ContEnv(env)
     env = wrappers.MinPerfScheduler(env)
     env = wrappers.RecordingSafeLifeWrapper(
         env, video_name="ray-test-videos/training"+args.algorithm+"-{episode_num}",

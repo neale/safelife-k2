@@ -9,7 +9,7 @@ from gym.wrappers.monitoring import video_recorder
 from safelife.side_effects import side_effect_score
 from safelife.game_physics import CellTypes
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
 
 global_episode_stats = SimpleNamespace(
@@ -32,8 +32,8 @@ class WrapperInit(Wrapper):
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
         super().__init__(env)
 
-        for env in envs:
-            env.tf_logger = self.logger
+        # for env in envs:
+        #     env.tf_logger = self.logger
 
 
 class BasicSafeLifeWrapper(WrapperInit):

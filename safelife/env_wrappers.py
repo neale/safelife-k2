@@ -7,7 +7,7 @@ import numpy as np
 from gym import Wrapper
 from gym.wrappers.monitoring import video_recorder
 from safelife.side_effects import side_effect_score
-from safelife.game_physics import CellTypes
+from safelife.safelife_game import CellTypes
 from safelife.render_text import cell_name
 
 logger = logging.getLogger(__name__)
@@ -208,10 +208,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
 
         if self.record_side_effects:
             side_effects = side_effect_score(game)
-            tf_data["side_effect"] = side_effects.get(green_life, 0)
+            tf_data["side_effect"] = side_effects.get(green_life, [0])[0]
             msg += "  side effects:\n"
             msg += "\n".join([
-                "    {}: {:0.2f}".format(cell_name(cell), val)
+                "    {}: [{:0.2f}, {:0.2f}]".format(cell_name(cell), val[0], val[1])
                 for cell, val in side_effects.items()
             ])
 
@@ -295,6 +295,19 @@ class ContinuingEnv(Wrapper):
         if done and not info['times_up']:
             done = False
             obs = self.env.reset()
+        return obs, reward, done, info
+
+
+class ExtraExitBonus(Wrapper):
+    bonus = 0.5
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if done and not info['times_up']:
+            reward += self.scheduled(self.bonus) * self.episode_reward
         return obs, reward, done, info
 
 

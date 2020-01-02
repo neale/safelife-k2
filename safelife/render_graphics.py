@@ -6,12 +6,12 @@ import os
 import imageio
 import numpy as np
 
-from .game_physics import CellTypes, GameState
+from .safelife_game import CellTypes, GameState
 from .helper_utils import recenter_view
 
 
-sprite_sheet = imageio.imread(os.path.abspath(
-    os.path.join(__file__, "../sprites.png"))) / 255
+sprite_path = os.path.join(os.path.dirname(__file__), "sprites.png")
+sprite_sheet = imageio.imread(os.path.abspath(sprite_path)) / 255
 SPRITE_SIZE = 14
 
 

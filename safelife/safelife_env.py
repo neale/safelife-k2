@@ -1,3 +1,4 @@
+import os
 import warnings
 from types import SimpleNamespace
 
@@ -8,7 +9,7 @@ import numpy as np
 
 from safelife import speedups
 from safelife.file_finder import safelife_loader
-from .game_physics import CellTypes
+from .safelife_game import CellTypes
 from .helper_utils import recenter_view
 
 
@@ -30,7 +31,7 @@ class SafeLifeEnv(gym.Env):
     Parameters
     ----------
     level_iterator : iterator
-        An iterator which produces :class:`game_physics.SafeLifeGame` instances.
+        An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
         For example, :func:`file_finder.safelife_loader` will produce new games
         from saved game files or procedural generation parameters. This can be
         replaced with a custom iterator to do more complex level generation,
@@ -49,6 +50,8 @@ class SafeLifeEnv(gym.Env):
         across all environments. This can be replaced with a custom object
         (or None) to store the counts in a different way. Counter attributes
         include ``episodes_started``, ``episodes_completed``, and ``num_steps``.
+        Note that this is mostly for bookkeeping and logging (via wrappers),
+        and it isn't necessary for the environments themselves.
     """
 
     metadata = {
@@ -205,22 +208,19 @@ class SafeLifeEnv(gym.Env):
     def close(self):
         pass
 
-
-# Register a few canonical environments with OpenAI Gym
-gym.register(
-    id="safelife-append-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/append-still')},
-)
-
-gym.register(
-    id="safelife-prune-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/prune-still')},
-)
-
-gym.register(
-    id="safelife-challenge-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/challenge')},
-)
+    @classmethod
+    def register(cls):
+        """Registers a few canonical environments with OpenAI Gym."""
+        for name in [
+            "append-still", "prune-still",
+            "append-still-easy", "prune-still-easy",
+            "append-spawn", "prune-spawn",
+            "navigation", "challenge"
+        ]:
+            gym.register(
+                id="safelife-{}-v1".format(name),
+                entry_point=SafeLifeEnv,
+                kwargs={
+                    'level_iterator': safelife_loader('random/' + name),
+                },
+            )

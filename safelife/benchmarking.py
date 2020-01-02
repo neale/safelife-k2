@@ -4,14 +4,14 @@ from types import SimpleNamespace
 import yaml
 import numpy as np
 
-from safelife.file_finder import safelife_loader
-from safelife.gym_env import SafeLifeEnv
-from . import wrappers
+from .file_finder import safelife_loader
+from .safelife_env import SafeLifeEnv
+from . import env_wrappers
 
 
 def run_benchmark(
         name, policy, logfile, num_trials=1, record=True, num_env=10,
-        env_args={}):
+        env_factory=SafeLifeEnv):
     """
     Run benchmark levels for a specific policy.
 
@@ -35,6 +35,10 @@ def run_benchmark(
         as the log file.
     num_env : int, optional
         Number of environments to run simultaneously.
+    env_factory : function
+        Function to build new SafeLifeEnv instances. Must accept at least two
+        arguments: ``level_iterator`` and ``global_counter``. See
+        :class:`safelife_env.SafeLifeEnv` for more details.
     """
     logfile = os.path.abspath(os.path.expanduser(logfile))
     logdir = os.path.split(logfile)[0]
@@ -46,7 +50,8 @@ def run_benchmark(
         logfile.write("# SafeLife benchmark data\n---\n")
         logfile.flush()
 
-    levels = safelife_loader("benchmarks/v1.0/" + name, repeat=num_trials)
+    levels = safelife_loader(
+        os.path.join("benchmarks", "v1.0", name), repeat=num_trials)
     counter = SimpleNamespace(
         episodes_started=0,
         episodes_completed=0,
@@ -60,11 +65,11 @@ def run_benchmark(
 
     envs = []
     obs = []
-    rnn_state = None
+    rnn_state = [None] * num_env
     for k in range(num_env):
-        env = SafeLifeEnv(levels, global_counter=counter, **env_args)
+        env = env_factory(level_iterator=levels, global_counter=counter)
         # Note that basically all the logging happens in the wrapper.
-        env = wrappers.RecordingSafeLifeWrapper(
+        env = env_wrappers.RecordingSafeLifeWrapper(
             env, log_file=logfile, video_name=video_name, video_recording_freq=1)
         try:
             obs.append(env.reset())
@@ -90,6 +95,7 @@ def run_benchmark(
                 if done:
                     try:
                         ob = env.reset()
+                        state = None
                     except StopIteration:
                         continue
                 new_obs.append(ob)
@@ -123,7 +129,7 @@ def load_benchmarks(logfile):
             stats[key].append(episode.get(key, 0))
         episode_effects = episode.get('side effects', {})
         for key in side_effects:
-            side_effects[key].append(episode_effects.get(key, 0))
+            side_effects[key].append(episode_effects.get(key, [0.0,0.0]))
     for key in stats:
         stats[key] = np.array(stats[key])
     for key in side_effects:

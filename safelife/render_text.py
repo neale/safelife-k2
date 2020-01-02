@@ -1,7 +1,7 @@
 import numpy as np
 
 from .helper_utils import recenter_view
-from .game_physics import CellTypes, GameWithGoals
+from .safelife_game import CellTypes, GameWithGoals
 
 
 background_colors = [
@@ -63,7 +63,8 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
             CellTypes.ice_cube: '=',
             CellTypes.parasite: '!',
             CellTypes.weed: '@',
-            CellTypes.spawner: 'S',
+            CellTypes.spawner: 's',
+            CellTypes.hard_spawner: 'S',
             CellTypes.level_exit: 'X',
             CellTypes.fountain: '\x1b[1m+',
         }.get(gray_cell, '?')
@@ -83,6 +84,7 @@ def cell_name(cell):
         CellTypes.parasite: 'parasite',
         CellTypes.weed: 'weed',
         CellTypes.spawner: 'spawner',
+        CellTypes.hard_spawner: 'hard-spawner',
         CellTypes.level_exit: 'exit',
         CellTypes.fountain: 'fountain',
     }.get(cell & ~CellTypes.rainbow_color, 'unknown')
@@ -94,7 +96,7 @@ def cell_name(cell):
         CellTypes.color_r | CellTypes.color_b: 'magenta',
         CellTypes.color_g | CellTypes.color_r: 'yellow',
         CellTypes.color_b | CellTypes.color_g: 'cyan',
-        CellTypes.rainbow_color: 'all',
+        CellTypes.rainbow_color: 'white',
     }.get(cell & CellTypes.rainbow_color, 'x')
     return cell_type + '-' + color
 

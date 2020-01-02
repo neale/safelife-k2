@@ -4,6 +4,7 @@ Algorithm for Proximal Policy Optimization.
 
 import os
 import logging
+import inspect
 from types import SimpleNamespace
 from collections import namedtuple
 from functools import wraps
@@ -12,9 +13,6 @@ import numpy as np
 import tensorflow as tf
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_LOGDIR = os.path.join(__file__, '../../data/tmp')
-DEFAULT_LOGDIR = os.path.abspath(DEFAULT_LOGDIR)
 
 
 def named_output(*names):
@@ -69,6 +67,9 @@ class PPO(object):
 
     Note that essentially all of these attributes can get overridden by
     subclasses, so the defaults set here are basically just for example.
+
+    Note also that nothing in this class requires or assumes anything about
+    SafeLife or the rest of the code base. It should be pretty generic.
 
     Attributes
     ----------
@@ -129,42 +130,56 @@ class PPO(object):
     value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
+    num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
     epochs_per_batch = 3
     total_steps = 5e6
     report_every = 5000
     save_every = 10000
-    test_every = 100000
     record_histograms = False  # histograms take a lot of disk space; disable by default
 
-    def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
+    logdir = None
+    tf_logger = None
+
+    def __init__(self, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
-                    not callable(getattr(self, key))):
+                    not inspect.ismethod(getattr(self, key))):
                 setattr(self, key, val)
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        self.envs = envs
-
         self.op = SimpleNamespace()
         self.num_steps = 0
         self.num_episodes = 0
-        self.build_graph()
         self.session = tf.Session()
+        if self.logdir:
+            self.tf_logger = tf.summary.FileWriter(self.logdir, self.session.graph)
+        self.envs = [self.environment_factory() for _ in range(self.num_env)]
+        self.build_graph()
         self.session.run(tf.global_variables_initializer())
-        self.logger = tf.summary.FileWriter(logdir, self.session.graph)
         self.saver = tf.train.Saver(**saver_args)
-        self.save_path = os.path.join(logdir, 'model')
-        self.restore_checkpoint(logdir)
+        if self.logdir:
+            self.tf_logger.add_graph(self.session.graph)
+            self.restore_checkpoint(self.logdir)
+
+    def environment_factory(self):
+        """
+        Factory for building a OpenAI gym-like environment.
+
+        To be implemented by subclasses.
+        """
+        raise NotImplementedError
 
     def save_checkpoint(self):
-        logger.info("Saving new checkpoint. %i episodes, %i steps.",
-                    self.num_episodes, self.num_steps)
-        self.op.num_steps.load(self.num_steps, self.session)
-        self.op.num_episodes.load(self.num_episodes, self.session)
-        self.saver.save(self.session, self.save_path, self.num_steps)
+        if self.logdir:
+            logger.info("Saving new checkpoint. %i episodes, %i steps.",
+                        self.num_episodes, self.num_steps)
+            self.op.num_steps.load(self.num_steps, self.session)
+            self.op.num_episodes.load(self.num_episodes, self.session)
+            save_path = os.path.join(self.logdir, 'model')
+            self.saver.save(self.session, save_path, self.num_steps)
 
     def restore_checkpoint(self, logdir, raise_on_error=False):
         """
@@ -178,12 +193,12 @@ class PPO(object):
         import re
         checkpoint_path = os.path.join(logdir, 'checkpoint')
         if not os.path.exists(checkpoint_path):
-            return
+            return False
         with open(checkpoint_path) as checkpoint_file:
             line = checkpoint_file.readline()
         match = re.match(r'.*"(.+)"', line)
         if not match:
-            return
+            return False
         last_checkpoint = os.path.split(match.group(1))[1]
         last_checkpoint = os.path.join(logdir, last_checkpoint)
         try:
@@ -192,11 +207,12 @@ class PPO(object):
             if raise_on_error:
                 raise
             else:
-                return
+                return False
         self.num_steps, self.num_episodes = self.session.run(
             [self.op.num_steps, self.op.num_episodes])
         logger.info("Restoring old checkpoint. %i episodes, %i steps.",
                     self.num_episodes, self.num_steps)
+        return True
 
     def build_graph(self):
         op = self.op
@@ -337,8 +353,35 @@ class PPO(object):
         else:
             return None
 
+    def policy(self, obs, rnn_state=None):
+        """
+        Probability of taking each action given an observation.
+        """
+        op = self.op
+        session = self.session
+
+        # Note that the op.states operator expects two dimensions for the
+        # observations: one for the number of environments, the other for the
+        # number of steps per environment. This only really matters when doing
+        # training on a batch, but we've got to get the shapes to match here.
+        if op.rnn_states_in is not None:
+            if rnn_state is None:
+                rnn_state = [self.rnn_zero_state()] * len(obs)
+            policies, rnn_state = session.run(
+                [op.policy, op.rnn_states_out],
+                feed_dict={
+                    op.states: [obs],
+                    op.rnn_states_in: rnn_state
+                })
+        else:
+            policies = session.run(op.policy, feed_dict={
+                op.states: [obs]
+            })
+            rnn_state = [None] * len(obs)
+        return policies[0], rnn_state
+
     @named_output(
-        'states', 'actions', 'rewards', 'end_episode', 'times_up',
+        'states', 'actions', 'rewards', 'end_episode',
         'rnn_states', 'info')
     def run_agents(self, steps_per_env):
         """
@@ -367,9 +410,6 @@ class PPO(object):
         rewards : ndarray shape(steps_per_env, num_env)
         end_episode : ndarray shape(steps_per_env, num_env), dtype bool
             True if the episode ended on that step, False otherwise.
-        times_up : ndarray shape(steps_per_env, num_env), dtype bool
-            True if the episode ended on that step due to the time limit being
-            exceeded, False otherwise.
         rnn_states : ndarray shape(num_env, ...)
             The initial internal state of the RNN for each environment at
             the beginning of each sequence. If an RNN isn't in use, this can
@@ -377,15 +417,12 @@ class PPO(object):
         info : ndarray shape(steps_per_env, num_env)
             An array of info dictionaries for each environment.
         """
-        op = self.op
-        session = self.session
         num_env = len(self.envs)
 
         obs = []
         actions = []
         rewards = []
         end_episode = []
-        times_up = []
         initial_rnn_states = []
         infos = []
         rnn_zero_state = self.rnn_zero_state
@@ -397,19 +434,9 @@ class PPO(object):
             initial_rnn_states.append(env._ppo_rnn_state)
         new_rnn_states = initial_rnn_states
         for _ in range(steps_per_env):
-            if op.rnn_states_in is not None:
-                policies, new_rnn_states = session.run(
-                    [op.policy, op.rnn_states_out],
-                    feed_dict={
-                        op.states: [obs[-num_env:]],
-                        op.rnn_states_in: new_rnn_states
-                    })
-            else:
-                policies = session.run(op.policy, feed_dict={
-                    op.states: [obs[-num_env:]]
-                })
+            policies, new_rnn_states = self.policy(obs[-num_env:], new_rnn_states)
             for env, policy, rnn_state in zip(
-                    self.envs, policies[0], new_rnn_states):
+                    self.envs, policies, new_rnn_states):
                 action = np.random.choice(len(policy), p=policy)
                 new_obs, reward, done, info = env.step(action)
                 if done:
@@ -422,7 +449,6 @@ class PPO(object):
                 actions.append(action)
                 rewards.append(reward)
                 end_episode.append(done)
-                times_up.append(info.get('times_up', done))
                 infos.append(info)
         self.num_steps += len(actions)
 
@@ -433,7 +459,6 @@ class PPO(object):
             np.array(actions).reshape(out_shape),
             np.array(rewards).reshape(out_shape),
             np.array(end_episode).reshape(out_shape),
-            np.array(times_up).reshape(out_shape),
             np.array(initial_rnn_states),
             np.array(infos).reshape(out_shape),
         )
@@ -447,7 +472,7 @@ class PPO(object):
         op = self.op
         session = self.session
 
-        states, actions, rewards, end_episode, times_up, rnn_states, info = \
+        states, actions, rewards, end_episode, rnn_states, info = \
             self.run_agents(steps_per_env)
         # Note that there should be one more state than action/reward for
         # each environment.
@@ -462,7 +487,7 @@ class PPO(object):
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
 
-        reward_mask = ~times_up[..., np.newaxis]
+        reward_mask = ~end_episode[..., np.newaxis]
         rnn_mask = np.roll(~end_episode, 1, axis=0)
         rnn_mask[0] = True
         rewards = rewards[..., np.newaxis]
@@ -520,10 +545,10 @@ class PPO(object):
             if op.rnn_states_in is not None:
                 fd[op.rnn_states_in] = batch.c
             summary = session.run(op.summary, feed_dict=fd)
-            self.logger.add_summary(summary, self.num_steps)
+            self.tf_logger.add_summary(summary, self.num_steps)
 
     def train(self, total_steps=None):
-        last_report = last_save = last_test = self.num_steps - 1
+        last_report = last_save = self.num_steps - 1
         total_steps = total_steps or self.total_steps
         while self.num_steps < total_steps:
             summarize = last_report // self.report_every < self.num_steps // self.report_every
@@ -531,13 +556,4 @@ class PPO(object):
             if last_save // self.save_every < self.num_steps // self.save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
-            if self.test_every and last_test // self.test_every < self.num_steps // self.test_every:
-                self.run_safety_test()
-                last_test = self.num_steps
         logger.info("FINISHED TRAINING")
-
-    def run_safety_test(self):
-        """
-        To be implemented by subclasses.
-        """
-        pass

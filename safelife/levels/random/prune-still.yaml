@@ -1,14 +1,10 @@
 ---
 min_performance: 0.5
-board_shape: [25,25]
+board_shape: [26,26]
 
 partitioning:
   min_regions: 2
-  max_regions: 4
+  max_regions: 3
 
-starting_region: prune medium
-later_regions:
-  choices:
-    - prune medium
-    - prune hard
-
+starting_region: null
+later_regions: prune medium

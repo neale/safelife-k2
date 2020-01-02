@@ -1,4 +1,6 @@
+import os
 import warnings
+from types import SimpleNamespace
 
 import gym
 from gym import spaces
@@ -7,7 +9,7 @@ import numpy as np
 
 from safelife import speedups
 from safelife.file_finder import safelife_loader
-from .game_physics import CellTypes
+from .safelife_game import CellTypes
 from .helper_utils import recenter_view
 
 
@@ -29,11 +31,13 @@ class SafeLifeEnv(gym.Env):
     Parameters
     ----------
     level_iterator : iterator
-        An iterator which produces :class:`game_physics.SafeLifeGame` instances.
+        An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
         For example, :func:`file_finder.safelife_loader` will produce new games
         from saved game files or procedural generation parameters. This can be
         replaced with a custom iterator to do more complex level generation,
         such as implementing a level curriculum.
+    time_limit : int
+        Maximum steps allowed per episode.
     remove_white_goals : bool
     output_channels : None or tuple of ints
         Specifies which channels get output in the observation.
@@ -41,6 +45,13 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
+    global_counter : object or None
+        The global counter records the total number of episodes and steps taken
+        across all environments. This can be replaced with a custom object
+        (or None) to store the counts in a different way. Counter attributes
+        include ``episodes_started``, ``episodes_completed``, and ``num_steps``.
+        Note that this is mostly for bookkeeping and logging (via wrappers),
+        and it isn't necessary for the environments themselves.
     """
 
     metadata = {
@@ -62,9 +73,16 @@ class SafeLifeEnv(gym.Env):
 
     # The following are default parameters that can be overridden during
     # initialization.
+    time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
+
+    global_counter = SimpleNamespace(
+        episodes_started=0,
+        episodes_completed=0,
+        num_steps=0
+    )
 
     def __init__(self, level_iterator, **kwargs):
         self.level_iterator = level_iterator
@@ -132,7 +150,7 @@ class SafeLifeEnv(gym.Env):
         # with the channels as the third dimension. Otherwise output a bit
         # array.
         if self.output_channels:
-            shift = np.array(list(self.output_channels), dtype=np.int16)
+            shift = np.array(list(self.output_channels), dtype=np.uint16)
             board = (board[...,None] & (1 << shift)) >> shift
         return board
 
@@ -144,13 +162,27 @@ class SafeLifeEnv(gym.Env):
         new_game_value = self.game.current_points()
         reward += new_game_value - self._old_game_value
         self._old_game_value = new_game_value
-        self._num_steps += 1
+        self.episode_length += 1
+        self.episode_reward += reward
         self.game.update_exit_colors()
+        times_up = self.episode_length > self.time_limit
+        already_completed = self.episode_completed
+        self.episode_completed = times_up or self.game.game_over
+        if not already_completed and self.global_counter is not None:
+            # Add to the global counters, but only if we're not continuing to
+            # run the environment after done = True.
+            self.global_counter.episodes_completed += self.episode_completed
+            self.global_counter.num_steps += 1
 
-        return self.get_obs(), reward, self.game.game_over, {
+        return self.get_obs(), reward, self.episode_completed, {
             'board': self.game.board,
             'goals': self.game.goals,
             'agent_loc': self.game.agent_loc,
+            'times_up': times_up,
+            'episode': {
+                'length': self.episode_length,
+                'reward': self.episode_reward,
+            }
         }
 
     def reset(self):
@@ -158,7 +190,11 @@ class SafeLifeEnv(gym.Env):
         self.game.revert()
         self.game.update_exit_colors()
         self._old_game_value = self.game.current_points()
-        self._num_steps = 0
+        self.episode_length = 0
+        self.episode_reward = 0
+        self.episode_completed = False
+        if self.global_counter is not None:
+            self.global_counter.episodes_started += 1
         return self.get_obs()
 
     def render(self, mode='ansi'):
@@ -172,22 +208,19 @@ class SafeLifeEnv(gym.Env):
     def close(self):
         pass
 
-
-# Register a few canonical environments with OpenAI Gym
-gym.register(
-    id="safelife-append-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/append-still')},
-)
-
-gym.register(
-    id="safelife-prune-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/prune-still')},
-)
-
-gym.register(
-    id="safelife-challenge-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/challenge')},
-)
+    @classmethod
+    def register(cls):
+        """Registers a few canonical environments with OpenAI Gym."""
+        for name in [
+            "append-still", "prune-still",
+            "append-still-easy", "prune-still-easy",
+            "append-spawn", "prune-spawn",
+            "navigation", "challenge"
+        ]:
+            gym.register(
+                id="safelife-{}-v1".format(name),
+                entry_point=SafeLifeEnv,
+                kwargs={
+                    'level_iterator': safelife_loader('random/' + name),
+                },
+            )

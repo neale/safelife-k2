@@ -4,11 +4,12 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
-from safelife.gym_env import SafeLifeEnv
+from safelife.safelife_env import SafeLifeEnv
+from safelife.safelife_game import CellTypes
 from safelife.file_finder import safelife_loader
+from safelife import env_wrappers
 
 from . import ppo
-from . import wrappers
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class SafeLifePPO(ppo.PPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/prune-still-easy.yaml')
+    level_iterator = safelife_loader('random/prune-still-easy.yaml')
     video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
@@ -125,17 +126,32 @@ class SafeLifePPO(ppo.PPO):
             else:
                 self.episode_log = None
 
-        env = SafeLifeEnv(self.game_iterator, view_shape=(33,33))
-        env = wrappers.MovementBonusWrapper(env)
-        env = wrappers.SimpleSideEffectPenalty(
+        env = SafeLifeEnv(
+            self.level_iterator,
+            view_shape=(25,25),
+            output_channels=(
+                CellTypes.alive_bit,
+                CellTypes.agent_bit,
+                CellTypes.pushable_bit,
+                CellTypes.destructible_bit,
+                CellTypes.frozen_bit,
+                CellTypes.spawning_bit,
+                CellTypes.exit_bit,
+                CellTypes.color_bit + 0,  # red
+                CellTypes.color_bit + 1,  # green
+                CellTypes.color_bit + 5,  # blue goal
+            ))
+        env = env_wrappers.MovementBonusWrapper(env)
+        env = env_wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty,
             min_performance=self.min_performance)
-        env = wrappers.RecordingSafeLifeWrapper(
+        env = env_wrappers.RecordingSafeLifeWrapper(
             env, video_name=video_name, tf_logger=self.tf_logger,
             log_file=self.episode_log, other_episode_data={
                 'impact_penalty': self.impact_penalty,
             })
-        env = wrappers.ContinuingEnv(env)
+        env = env_wrappers.ExtraExitBonus(env)
+        # env = env_wrappers.ContinuingEnv(env)
         return env
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from collections import defaultdict, deque
 import numpy as np
 
-from .game_physics import SafeLifeGame, ORIENTATION
+from .safelife_game import SafeLifeGame, ORIENTATION
 from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
@@ -77,7 +77,7 @@ class GameLoop(object):
     gen_params = None
     print_only = False
     relative_controls = True
-    recording_directory = "./plays/"
+    recording_directory = "plays"  # in the current working directory
 
     def __init__(self, level_generator):
         self.level_generator = level_generator
@@ -342,7 +342,10 @@ class GameLoop(object):
                     state.screen = "GAMEOVER"
             elif game.game_over:
                 state.screen = "LEVEL SUMMARY"
-                state.side_effects = side_effect_score(game)
+                state.side_effects = {
+                    key: val[0] for key, val in
+                    side_effect_score(game).items()
+                }
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
                 self.log_level_stats()
@@ -373,8 +376,15 @@ class GameLoop(object):
         state = self.state
         game = state.game  # noqa, just tee up local variables for the shell
         state.last_command = ""
-        from IPython import embed; embed()  # noqa
         self.set_needs_display()
+        try:
+            from IPython import embed
+        except ImportError:
+            print("Could not import IPython.")
+            print("Hit any key to return to the game.")
+            getch()
+        else:
+            embed()
 
     intro_text = """
     ##########################################################

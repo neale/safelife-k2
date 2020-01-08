@@ -5,12 +5,27 @@ from safelife.safelife_env import SafeLifeEnv; SafeLifeEnv.register()
 import safelife.env_wrappers as env_wrappers
 import gym
 from gym import Wrapper
+from rl_coach.environments.environment import EnvironmentParameters
+from rl_coach.filters.filter import NoInputFilter, NoOutputFilter
+
 
 # ##Create the safelife env with wrappers
 # env = SafeLifeEnv(view_shape=(25,25), level_iterator=('append-still'))
 # env = env_wrappers.MovementBonusWrapper(env)
 # # env = env_wrappers.ExtraExitBonus(env)
 # env.register()
+
+# Parameters
+class SafelifeParameters(EnvironmentParameters):
+    def __init__(self):
+        super().__init__()
+        self.default_input_filter = NoInputFilter()
+        self.default_output_filter = NoOutputFilter()
+        # self.level_iterator = 'prune-still-v1'
+
+    @property
+    def path(self):
+        return 'safelife.safelife_env'
 
 class ExtraExitBonus(Wrapper):
     bonus = 0.5
@@ -30,14 +45,14 @@ class ExtraExitBonus(Wrapper):
 # env = ExtraExitBonus(env)
 # env.register()#id='safelife-custom-v1')
 
-def env_factory():
-    env = SafeLifeEnv(view_shape=(25,25), level_iterator=('append-still'))
-    env = env_wrappers.MovementBonusWrapper(env)
-    env = ExtraExitBonus(env)
-    # env = gym.make(env)
-    return env
+# def env_factory():
+#     env = SafeLifeEnv(view_shape=(25,25), level_iterator=('prune-still'))
+#     # env = env_wrappers.MovementBonusWrapper(env)
+#     # env = ExtraExitBonus(env)
+#     # env = gym.make(env)
+#     return env
 
-gym.register(id='safelife-custom-v1', entry_point=env_factory,)
+# gym.register(id='safelife-custom-v1', entry_point=env_factory,)
 
 # env2 = gym.make('safelife-custom-v1')
 
@@ -50,12 +65,27 @@ from rl_coach.graph_managers.graph_manager import SimpleSchedule
 from rl_coach.memories.memory import MemoryGranularity
 from rl_coach.architectures.embedder_parameters import InputEmbedderParameters
 from rl_coach.architectures.tensorflow_components.layers import Conv2d, Dense, BatchnormActivationDropout
+from rl_coach.graph_managers.graph_manager import ScheduleParameters
+from rl_coach.schedules import LinearSchedule
+from rl_coach.core_types import TrainingSteps, EnvironmentEpisodes, EnvironmentSteps
+from rl_coach.base_parameters import VisualizationParameters, PresetValidationParameters
+from rl_coach.base_parameters import TaskParameters
+# from rl_coach.environments.environment import SingleLevelSelection
 
 # Resetting tensorflow graph as the network has changed.
-tf.reset_default_graph()
+# tf.reset_default_graph()
 
 #Graph Scheduling
-schedule_params = SimpleSchedule()
+schedule_params = ScheduleParameters()
+schedule_params.improve_steps = TrainingSteps(1000)
+schedule_params.steps_between_evaluation_periods = EnvironmentEpisodes(50)
+schedule_params.evaluation_steps = EnvironmentEpisodes(5)
+schedule_params.heatup_steps = EnvironmentSteps(0)
+
+###Viz
+vis_params = VisualizationParameters()
+# vis_params.level_iterator = 'prune-still-v1'
+
 
 ##Agent
 agent_params = DQNAgentParameters()
@@ -86,21 +116,35 @@ agent_params.network_wrappers['main'].input_embedders_parameters = {
 
 
 # define the environment parameters
-env_params = GymVectorEnvironment(level='safelife-prune-still-v1')
+# env_params = SafelifeParameters(level='prune-still-v1')
+# env_params = SafeLifeEnv(level_iterator='prune-still-v1')
+# env_params = GymVectorEnvironment(level='safelife-prune-still-v1')
 # env_params = GymVectorEnvironment(level=env_factory)
 # env_params.additional_simulator_parameters = {'bit_length': bit_length, 'mean_zero': True}
 
-# Clipped PPO
-# agent_params = ClippedPPOAgentParameters()
-# agent_params.network_wrappers['main'].input_embedders_parameters = {
-#     'state': InputEmbedderParameters(scheme=[]),
-#     'desired_goal': InputEmbedderParameters(scheme=[])
-# }
+env_params = GymVectorEnvironment(level=os.path.join(
+    os.path.dirname(__file__),
+    'safelife_factory.py:environment_factory'
+))
 
-graph_manager = BasicRLGraphManager(
-    agent_params=agent_params,
-    env_params=env_params,
-    schedule_params=SimpleSchedule()
-)
+# env_params = GymVectorEnvironment(level=
+#     'safelife_factory.py:environment_factory'
+# )
 
+
+####Simple Graph
+# graph_manager = BasicRLGraphManager(
+#     agent_params=agent_params,
+#     env_params=env_params,
+#     schedule_params=SimpleSchedule()
+# )
+
+task1 = TaskParameters()
+task1.experiment_path = os.path.join(os.path.dirname(__file__), 'exp1')
+
+graph_manager = BasicRLGraphManager(agent_params=agent_params, env_params=env_params,
+                                    schedule_params=schedule_params, vis_params=vis_params)
+
+
+graph_manager.create_graph(task1)
 graph_manager.improve()

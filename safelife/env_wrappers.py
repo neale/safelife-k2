@@ -18,13 +18,13 @@ class BaseWrapper(Wrapper):
     Minor convenience class to make it easier to set attributes during init.
     """
     def __init__(self, env, **kwargs):
+        super().__init__(env)
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
                     not callable(getattr(self, key))):
                 setattr(self, key, val)
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
-        super().__init__(env)
 
     def scheduled(self, val):
         """
@@ -149,7 +149,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         "episode_num", "step_num", and "level_title".
     video_recording_freq : int
         Record a video every n episodes.
-    tf_logger : tensorflow.summary.FileWriter instance
+    tb_logger : tensorboardX.SummaryWriter instance
         If set, all values in the episode info dictionary will be written
         to tensorboard at the end of the episode.
     log_file : file-like object
@@ -163,7 +163,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         If values are callables, they'll be called with the current global
         time step.
     """
-    tf_logger = None
+    tb_logger = None
     log_file = None
     video_name = None
     video_recorder = None
@@ -225,12 +225,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         if self.log_file is not None:
             self.log_file.write(msg)
             self.log_file.flush()
-        if self.tf_logger is not None:
-            import tensorflow as tf  # delay import to reduce module reqs
-            summary = tf.Summary()
+        if self.tb_logger is not None:
             for key, val in tf_data.items():
-                summary.value.add(tag='episode/'+key, simple_value=val)
-            self.tf_logger.add_summary(summary, num_steps)
+                self.tb_logger.add_scalar("episode/"+key, val, num_steps)
+            self.tb_logger.flush()
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)

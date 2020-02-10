@@ -44,8 +44,8 @@ class DQN(object):
     num_episodes = 0
 
     gamma = 0.97
-    training_batch_size = 64
-    optimize_freq = 16
+    training_batch_size = 128
+    optimize_freq = 24
     learning_rate = 3e-4
 
     replay_initial = 40000
@@ -80,7 +80,7 @@ class DQN(object):
         t1 = 1e5
         t2 = 1e6
         y1 = 1.0
-        y2 = 0.1
+        y2 = 0.15
         t = (self.num_steps - t1) / (t2 - t1)
         return y1 + (y2-y1) * np.clip(t, 0, 1)
 
@@ -157,6 +157,7 @@ class DQN(object):
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
         qvals = self.training_model(tensor_states).detach().cpu().numpy()
 
+        ##Action Taking - Change here for temperature based exporation
         num_states, num_actions = qvals.shape
         actions = np.argmax(qvals, axis=-1)
         random_actions = np.random.randint(num_actions, size=num_states)

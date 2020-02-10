@@ -68,7 +68,7 @@ def safelife_env_factory(
         if testing:
             env.global_counter = None  # don't increment num_steps
         else:
-            env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
+            env = env_wrappers.MovementBonusWrapper(env, as_penalty=False)
             env = env_wrappers.ExtraExitBonus(env)
         if impact_penalty is not None:
             env = env_wrappers.SimpleSideEffectPenalty(

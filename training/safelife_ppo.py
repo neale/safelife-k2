@@ -1,13 +1,10 @@
-import os
 import logging
 import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
 from safelife.safelife_env import SafeLifeEnv
-from safelife.safelife_game import CellTypes
-from safelife.file_finder import safelife_loader
-from safelife import env_wrappers
+from safelife.file_finder import SafeLifeLevelIterator
 
 from . import ppo
 
@@ -53,7 +50,7 @@ class SafeLifePPO(ppo.PPO):
     """
 
     # Training batch params
-    level_iterator = safelife_loader('random/prune-still-easy.yaml')
+    level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
     video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
@@ -70,9 +67,7 @@ class SafeLifePPO(ppo.PPO):
     # Training network params
     #   Note that we can use multiple discount factors gamma to learn multiple
     #   value functions associated with rewards over different time frames.
-    gamma = np.array([0.97], dtype=np.float32)
-    policy_discount_weights = np.array([1.0], dtype=np.float32)
-    value_discount_weights = np.array([1.0], dtype=np.float32)
+    gamma = 0.97
     lmda = 0.9
     learning_rate = 3e-4
     entropy_reg = 5e-2
@@ -80,7 +75,7 @@ class SafeLifePPO(ppo.PPO):
     max_gradient_norm = 1.0
     eps_clip = 0.1
     reward_clip = 30.0
-    policy_rectifier = 'elu'
+    policy_rectifier = 'relu'
     scale_prob_clipping = True
 
     # --------
@@ -107,53 +102,7 @@ class SafeLifePPO(ppo.PPO):
         pass  # don't allow setting directly, but don't throw an error
 
     # --------
-    # Functions for building environments and building network architecture:
-
-    def environment_factory(self):
-        if self.logdir:
-            video_name = os.path.join(self.logdir, self.video_name)
-        else:
-            video_name = None
-
-        if not hasattr(self, 'episode_log'):
-            if self.logdir:
-                fname = os.path.join(self.logdir, "training.yaml")
-                if os.path.exists(fname):
-                    self.episode_log = open(fname, 'a')
-                else:
-                    self.episode_log = open(fname, 'w')
-                    self.episode_log.write("# Training episodes\n---\n")
-            else:
-                self.episode_log = None
-
-        env = SafeLifeEnv(
-            self.level_iterator,
-            view_shape=(25,25),
-            output_channels=(
-                CellTypes.alive_bit,
-                CellTypes.agent_bit,
-                CellTypes.pushable_bit,
-                CellTypes.destructible_bit,
-                CellTypes.frozen_bit,
-                CellTypes.spawning_bit,
-                CellTypes.exit_bit,
-                CellTypes.color_bit + 0,  # red
-                CellTypes.color_bit + 1,  # green
-                CellTypes.color_bit + 5,  # blue goal
-            ))
-        env = env_wrappers.MovementBonusWrapper(env)
-        env = env_wrappers.SimpleSideEffectPenalty(
-            env, penalty_coef=self.impact_penalty)
-        env = env_wrappers.MinPerformanceScheduler(
-            env, min_performance=self.min_performance)
-        env = env_wrappers.RecordingSafeLifeWrapper(
-            env, video_name=video_name, tf_logger=self.tf_logger,
-            log_file=self.episode_log, other_episode_data={
-                'impact_penalty': self.impact_penalty,
-            })
-        env = env_wrappers.ExtraExitBonus(env)
-        # env = env_wrappers.ContinuingEnv(env)
-        return env
+    # Building network architecture:
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
@@ -213,7 +162,7 @@ class SafeLifePPO(ppo.PPO):
             y, units=self.envs[0].action_space.n,
             kernel_initializer=ortho_init(0.01))
         values = tf.layers.dense(
-            y, units=len(self.gamma),
+            y, units=1,
             kernel_initializer=ortho_init(1.0))
 
-        return logits, values
+        return logits, values[...,0]

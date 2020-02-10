@@ -12,7 +12,8 @@ from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
-from .file_finder import safelife_loader
+from .file_finder import SafeLifeLevelIterator
+from .random import set_rng
 
 
 COMMAND_KEYS = {
@@ -757,14 +758,9 @@ def _make_cmd_args(subparsers):
             " folder if not found in the current working directory."
             " If no files are provided, a new board will be randomly generated"
             " with the default parameters.")
-        group = parser.add_mutually_exclusive_group()
-        group.add_argument('-r', '--repeat', action="store_const",
-            default="auto", const=True,
-            help="If set, repeat levels in an endless loop."
-            " Levels will automatically repeat if they're procedurally"
-            " generated with a single set of parameters.")
-        group.add_argument('--no-repeat', action="store_false", dest="repeat",
-            help="Prevent levels from repeating.")
+        parser.add_argument('-n', '--num_levels', type=int,
+            help="Number of levels to load. "
+            "If negative, levels are repeated endlessly.")
     for parser in (new_parser,):
         parser.add_argument('-b', '--board_size', type=int, default=15,
             help="Width and height of the empty board.",
@@ -786,10 +782,13 @@ def _make_cmd_args(subparsers):
         parser.add_argument('-t', '--text_mode', action='store_true',
             help="Run the game in the terminal instead of using a graphical"
             " display.")
+        parser.add_argument('--seed', type=int, default=None,
+            help="Random seed for level generation.")
         parser.set_defaults(run_cmd=_run_cmd_args)
 
 
 def _run_cmd_args(args):
+    seed = np.random.SeedSequence(args.seed)
     if args.cmd == "new":
         if args.board_size < 3:
             print("Error: 'board_size' must be at least 3.")
@@ -800,7 +799,8 @@ def _run_cmd_args(args):
         game = SafeLifeGame(board_size=(args.board_size, args.board_size))
         main_loop = GameLoop(iter([game]))
     else:
-        main_loop = GameLoop(safelife_loader(*args.load_from, repeat=args.repeat))
+        main_loop = GameLoop(SafeLifeLevelIterator(
+            *args.load_from, total_levels=args.num_levels, seed=seed.spawn(1)[0]))
     if args.cmd == "print":
         main_loop.print_only = True
     else:
@@ -809,7 +809,8 @@ def _run_cmd_args(args):
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
     if args.cmd == "play":
         main_loop.logfile = args.logfile
-    if args.text_mode:
-        main_loop.run_text()
-    else:
-        main_loop.run_gl()
+    with set_rng(np.random.default_rng(seed)):
+        if args.text_mode:
+            main_loop.run_text()
+        else:
+            main_loop.run_gl()

@@ -1,4 +1,65 @@
 import os
+
+from scipy import interpolate
+
+from safelife.safelife_env import SafeLifeEnv
+from safelife.safelife_game import CellTypes
+from safelife.file_finder import safelife_loader
+from safelife import env_wrappers
+
+
+def linear_schedule(t, y):
+    return interpolate.UnivariateSpline(t, y, s=0, k=1, ext='const')
+
+
+def environment_factory(
+        safelife_levels=["random/prune-still"],
+        logdir="./data/tmp",
+        min_performance=([1.0e6, 2.0e6], [0.01, 0.3])):
+
+    env = SafeLifeEnv(
+        safelife_loader(*safelife_levels),
+        view_shape=(25,25),
+        output_channels=(
+            CellTypes.alive_bit,
+            CellTypes.agent_bit,
+            CellTypes.pushable_bit,
+            CellTypes.destructible_bit,
+            CellTypes.frozen_bit,
+            CellTypes.spawning_bit,
+            CellTypes.exit_bit,
+            CellTypes.color_bit + 0,  # red
+            CellTypes.color_bit + 1,  # green
+            CellTypes.color_bit + 5,  # blue goal
+        ))
+    env = env_wrappers.MovementBonusWrapper(env)
+    # env = env_wrappers.SimpleSideEffectPenalty(
+    #     env, penalty_coef=self.impact_penalty)
+
+    env = MinPerformanceScheduler(
+        env, min_performance=linear_schedule(*min_performance))
+
+    if logdir is not None:
+        os.makedirs(logdir, exist_ok=True)
+        fname = os.path.join(logdir, 'training.log')
+        if os.path.exists(fname):
+            episode_log = open(fname, 'a')
+        else:
+            episode_log = open(fname, 'w')
+            episode_log.write("# Training episodes\n---\n")
+        video_name = os.path.join(logdir, "episode-{episode_num}-{step_num}")
+        env = env_wrappers.RecordingSafeLifeWrapper(
+            env, log_file=episode_log,
+            video_name=video_name, video_recording_freq=100)
+
+    env = ExtraExitBonus(env)
+    # env = env_wrappers.ContinuingEnv(env)
+    return env
+
+
+#####Wrappers locally
+
+import os
 import queue
 import logging
 import textwrap
@@ -6,11 +67,9 @@ import numpy as np
 
 from gym import Wrapper
 from gym.wrappers.monitoring import video_recorder
-
-from .side_effects import side_effect_score
-from .safelife_game import CellTypes
-from .render_text import cell_name
-from .helper_utils import load_kwargs
+from safelife.side_effects import side_effect_score
+from safelife.safelife_game import CellTypes
+from safelife.render_text import cell_name
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +79,13 @@ class BaseWrapper(Wrapper):
     Minor convenience class to make it easier to set attributes during init.
     """
     def __init__(self, env, **kwargs):
+        for key, val in kwargs.items():
+            if (not key.startswith('_') and hasattr(self, key) and
+                    not callable(getattr(self, key))):
+                setattr(self, key, val)
+            else:
+                raise ValueError("Unrecognized parameter: '%s'" % (key,))
         super().__init__(env)
-        load_kwargs(self, kwargs)
 
     def scheduled(self, val):
         """
@@ -60,17 +124,10 @@ class MovementBonusWrapper(BaseWrapper):
         Exponent applied to the movement bonus. Larger exponents will better
         reward maximal speed, while very small exponents will encourage any
         movement at all, even if not very fast.
-    as_penalty : bool
-        If True, the incentive is applied as a penalty for standing still
-        rather than a bonus for movement. This shifts all rewards by
-        a constant amount. This can be useful for episodic environments so
-        that the agent does not receive a bonus for dallying and not reaching
-        the level exit.
     """
     movement_bonus = 0.1
     movement_bonus_power = 0.01
     movement_bonus_period = 4
-    as_penalty = False
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -91,8 +148,6 @@ class MovementBonusWrapper(BaseWrapper):
             dist = n
         speed = dist / n
         reward += self.movement_bonus * speed**self.movement_bonus_power
-        if self.as_penalty:
-            reward -= self.movement_bonus
         self._prior_positions.append(self.game.agent_loc)
 
         return obs, reward, done, info
@@ -155,12 +210,9 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         "episode_num", "step_num", and "level_title".
     video_recording_freq : int
         Record a video every n episodes.
-    summary_writer : tensorboardX.SummaryWriter instance
+    tf_logger : tensorflow.summary.FileWriter instance
         If set, all values in the episode info dictionary will be written
-        to tensorboard at the end of the episode. Note that the only interface
-        used here is `summary_writer.add_scalar(key, val, step)` and
-        `summary_writer.flush()`, so any other appropriate logging class could
-        be swapped in with a thin shim.
+        to tensorboard at the end of the episode.
     log_file : file-like object
         If set, all end of episode stats get written to the specified file.
         Data is written in YAML format.
@@ -171,18 +223,14 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         Any other data that should be recorded at the end of every episode.
         If values are callables, they'll be called with the current global
         time step.
-    tag : str
-        Tag prepended to tensorboard output.
     """
-    summary_writer = None
+    tf_logger = None
     log_file = None
     video_name = None
     video_recorder = None
     video_recording_freq = 100
     record_side_effects = True
-    tag = "episodes/"
     other_episode_data = {}
-    exclude = ()
 
     def log_episode(self):
         if self.global_counter is not None:
@@ -196,8 +244,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         completed, possible = game.performance_ratio()
         perf_cutoff = max(0, game.min_performance)
         green_life = CellTypes.life | CellTypes.color_g
+        initial_green = np.sum(
+            game._init_data['board'] | CellTypes.destructible == green_life)
 
-        summary_data = {
+        tf_data = {
             "num_episodes": num_episodes,
             "length": self.episode_length,
             "reward": self.episode_reward,
@@ -211,19 +261,21 @@ class RecordingSafeLifeWrapper(BaseWrapper):
           length: {length}
           reward: {reward:0.3g}
           performance: [{completed}, {possible}, {cutoff:0.3g}]
+          initial green: {initial_green}
         """).format(
             name=game.title, episode_num=self.episode_num,
             length=self.episode_length, reward=self.episode_reward,
-            completed=completed, possible=possible, cutoff=perf_cutoff)
+            completed=completed, possible=possible, cutoff=perf_cutoff,
+            initial_green=initial_green)
 
         for key, val in self.other_episode_data.items():
             val = self.scheduled(val)
             msg += "  {}: {:0.4g}\n".format(key, val)
-            summary_data[key] = float(val)
+            tf_data[key] = float(val)
 
         if self.record_side_effects:
             side_effects = side_effect_score(game)
-            summary_data["side_effect"] = side_effects.get(green_life, [0])[0]
+            tf_data["side_effect"] = side_effects.get(green_life, [0])[0]
             msg += "  side effects:\n"
             msg += "\n".join([
                 "    {}: [{:0.2f}, {:0.2f}]".format(cell_name(cell), val[0], val[1])
@@ -234,11 +286,12 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         if self.log_file is not None:
             self.log_file.write(msg)
             self.log_file.flush()
-        if self.summary_writer is not None:
-            for key, val in summary_data.items():
-                if key not in self.exclude:
-                    self.summary_writer.add_scalar(self.tag+key, val, num_steps)
-            self.summary_writer.flush()
+        if self.tf_logger is not None:
+            import tensorflow as tf  # delay import to reduce module reqs
+            summary = tf.Summary()
+            for key, val in tf_data.items():
+                summary.value.add(tag='episode/'+key, simple_value=val)
+            self.tf_logger.add_summary(summary, num_steps)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
@@ -325,7 +378,6 @@ class ExtraExitBonus(BaseWrapper):
 class MinPerformanceScheduler(BaseWrapper):
     """
     Provide a mechanism to set the `min_performance` for each episode.
-
     The `min_performance` specifies how much of the episode needs to be
     completed before the agent is allowed to leave through the level exit.
     The benchmark levels typically have `min_performance = 0.5`, but it can

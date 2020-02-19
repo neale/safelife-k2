@@ -11,6 +11,7 @@ import subprocess
 import shutil
 import logging
 import logging.config
+import torch
 
 env_types = [
     'append-still',
@@ -41,7 +42,7 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', choices=('ppo', 'dqn'))
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'dqn-plus'))
 args = parser.parse_args()
 
 # Setup the directories
@@ -269,6 +270,36 @@ try:
                 training_envs=training_envs,
                 testing_envs=testing_envs,
                 logdir=subdir, summary_writer=summary_writer)
+            algo.train(6e6)
+
+        elif args.algo == 'dqn-plus':
+            from training.models import SafeLifeQNetwork
+            from training.models import SafeLifeQNoise
+            from training.models import SafeLifeDistNetwork
+            from training.dqn_plus import DQN
+
+            obs_shape = training_envs[0].observation_space.shape
+            action_dim = 9
+
+            v_min = - 10.0
+            v_max = 10.0
+            atom_size = int(51)
+
+            support = torch.linspace(v_min, v_max, atom_size)
+            
+            # train_model = SafeLifeQNetwork(obs_shape)
+            # target_model = SafeLifeQNetwork(obs_shape)
+
+            train_model = SafeLifeDistNetwork(obs_shape, action_dim, atom_size, support)
+            target_model = SafeLifeDistNetwork(obs_shape, action_dim, atom_size, support)
+
+
+            algo = DQN(
+                train_model, target_model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
+                logdir=subdir, summary_writer=summary_writer, 
+                v_max=v_max, v_min=v_min, atom_size=atom_size)
             algo.train(6e6)
 
 

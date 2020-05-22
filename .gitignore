@@ -7,3 +7,14 @@ build
 run-info.txt
 plays
 *.so
+8env_append-still/
+8env_append-still-easy/
+buffers/
+build/
+gcloud/
+AUP/
+images/
+models/
+training_runs/
+trialthrowaway/
+

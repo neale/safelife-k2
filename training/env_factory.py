@@ -1,9 +1,42 @@
 import os
 from scipy import interpolate
+import numpy as np
+from gym import spaces
 
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife import env_wrappers
+ 
+from safelife.render_graphics import render_board, render_game
+from safelife.helper_utils import recenter_view
+ 
+ 
+class SafeLifeRGBEnv(SafeLifeEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.observation_space = spaces.Box(
+            low=0, high=255,
+            shape=(self.view_shape[0]*14, self.view_shape[1]*14, 3),
+            dtype=np.uint8)
+        print ('spinning up teh rgb env')
+    
+    def get_obs(self, board=None, goals=None, agent_loc=None):
+        if board is None:
+            board = self.game.board
+        if goals is None:
+            goals = self.game.goals
+        if agent_loc is None:
+            agent_loc = self.game.agent_loc
+ 
+        import matplotlib.pyplot as plt
+        board = recenter_view(
+            board, (15, 15), agent_loc[::-1], self.game.exit_locs)
+        goals = recenter_view(
+            goals, (15, 15), agent_loc[::-1], self.game.exit_locs)
+        orientation = self.game.orientation
+        
+        state = render_board(board, goals, orientation)
+        return state
 
 
 def linear_schedule(t, y):
@@ -47,6 +80,7 @@ def safelife_env_factory(
     envs = []
     for _ in range(num_envs):
         env = SafeLifeEnv(
+        #env = SafeLifeRGBEnv(
             level_iterator,
             view_shape=(25,25),
             # This is a minor optimization, but a few of the output channels

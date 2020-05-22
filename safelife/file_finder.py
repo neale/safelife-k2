@@ -80,6 +80,7 @@ def _load_files(paths):
         return [[None, 'procgen', {}]]
     all_data = []
     for file_name in find_files(*paths, file_types=('json', 'npz', 'yaml')):
+        print (file_name)
         if file_name.endswith('.json') or file_name.endswith('.yaml'):
             with open(file_name) as file_data:
                 all_data.append([file_name, 'procgen', yaml.safe_load(file_data)])
@@ -264,7 +265,7 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     Generate and save many levels using the above loader.
     """
     out_dir = os.path.abspath(out_dir)
-    base_name = os.path.basepath(out_dir)
+    base_name = os.path.basename(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     num_digits = int(np.log10(num_gen))+1
     fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)

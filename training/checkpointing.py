@@ -65,6 +65,7 @@ def load_checkpoint(path, obj):
     for key, val in checkpoint.items():
         orig_val = getattr(obj, key, None)
         if hasattr(orig_val, 'load_state_dict'):
+            print ('loading {}'.format(key))
             orig_val.load_state_dict(val)
         else:
             setattr(obj, key, val)

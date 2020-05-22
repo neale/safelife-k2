@@ -12,7 +12,10 @@ import shutil
 import logging
 import logging.config
 
+import numpy as np
+
 env_types = [
+    'test',
     'append-still',
     'append-spawn',
     'prune-still',
@@ -41,7 +44,8 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'))
+parser.add_argument('--algo', default='ppo', choices=('ppo', 'dqn', 'ppo-tf', 'ppo-rr'))
+parser.add_argument('--z', default=1.0)
 args = parser.parse_args()
 
 # Setup the directories
@@ -177,15 +181,28 @@ def spawn_loader(name):
     from safelife.file_finder import SafeLifeLevelIterator
     from safelife.safelife_env import SafeLifeEnv
 
-    loader1 = SafeLifeLevelIterator('random/{}-still-easy'.format(name))
-    loader2 = SafeLifeLevelIterator('random/{}-spawn'.format(name))
-
-    t0 = 1.5e6 if name == 'prune' else 2.0e6
+    loader1 = SafeLifeLevelIterator('random/{}-still-easy'.format(name),
+                                                   distinct_levels=4,
+                                                   total_levels=-1)
+    loader2 = SafeLifeLevelIterator('random/{}-spawn'.format(name),
+                                                   distinct_levels=4,
+                                                   total_levels=-1)
+    trand = 0
+    tstill = 2.0e6
+    tspawn = 4.0e6
     while True:
-        if SafeLifeEnv.global_counter.num_steps < t0:
+        count = SafeLifeEnv.global_counter.num_steps
+        if count >= trand and count < tstill:
+            p = np.random.randint(2, size=1)[0]
+            yield next(loader1) if p else next(loader2)
+
+        elif count >= tstill and count < tspawn:
             yield next(loader1)
-        else:
+        
+        elif count >= tspawn:
             yield next(loader2)
+        else:
+            raise ValueError
 
 
 try:
@@ -201,16 +218,34 @@ try:
         else:
             from tensorboardX import SummaryWriter
 
+        if env_type == 'test':
+            t_penalty = [1.0e6, 2.0e6]
+            t_performance = [1.0e6, 2.0e6]
+            training_levels = 'puzzles/14 - Blinky maze.npz'
+            test_levels = 'puzzles/14 - Blinky maze.npz'
+            level_iterator = SafeLifeLevelIterator(training_levels,
+                    distinct_levels=1,
+                    total_levels=-1)
+
+            # test_levels = 'benchmarks/v1.0/append-still.npz'
+
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]
-            level_iterator = SafeLifeLevelIterator('random/append-still-easy.yaml')
-            test_levels = 'benchmarks/v1.0/append-still.npz'
+            training_levels = '8env_append-still-easy/'#random/append-still-easy.yaml',
+            test_levels = '8env_append-still/'#random/append-still-easy.yaml',
+            level_iterator = SafeLifeLevelIterator(training_levels,
+                                                   distinct_levels=8,
+                                                   total_levels=-1)
+
+            # test_levels = 'benchmarks/v1.0/append-still.npz'
 
         elif env_type == 'prune-still':
             t_penalty = [0.5e6, 1.5e6]
             t_performance = [0.5e6, 1.5e6]
-            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
+            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml',
+                                                   distinct_levels=8,
+                                                   total_levels=-1)
             test_levels = 'benchmarks/v1.0/prune-still.npz'
 
         elif env_type == 'append-spawn':
@@ -228,7 +263,9 @@ try:
         elif env_type == 'navigate':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
-            level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
+            level_iterator = SafeLifeLevelIterator('random/navigation.yaml',
+                                                   distinct_levels=4,
+                                                   total_levels=-1)
             test_levels = 'benchmarks/v1.0/navigation.npz'
         else:
             print("Unexpected environment type '{}'".format(env_type))
@@ -242,9 +279,9 @@ try:
             level_iterator=level_iterator,
         )
         testing_envs = safelife_env_factory(
-            logdir=subdir, summary_writer=summary_writer, num_envs=5, testing=True,
+            logdir=subdir, summary_writer=summary_writer, num_envs=8, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=5, total_levels=-1)
+                test_levels, distinct_levels=8, total_levels=-1)
         )
 
         if args.algo == 'ppo-tf':
@@ -260,15 +297,45 @@ try:
         elif args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
             from training.ppo import PPO
-
+            from training.ppo_ensemble import PPO_AUP
+            n_rfns = 5
             obs_shape = training_envs[0].observation_space.shape
             model = SafeLifePolicyNetwork(obs_shape)
-            algo = PPO(
-                model,
+            models_aup = [SafeLifePolicyNetwork(obs_shape) for _ in range(n_rfns)]
+            algo = PPO_AUP(
+                model, models_aup, env_type,
                 training_envs=training_envs,
                 testing_envs=testing_envs,
                 logdir=subdir, summary_writer=summary_writer)
-            algo.train(6e6)
+            algo.train(5e6)
+        
+        elif args.algo == 'ppo-rr':
+            from training.models import SafeLifePolicyNetwork
+            from training.ppo import PPO
+            obs_shape = training_envs[0].observation_space.shape
+            model = SafeLifePolicyNetwork(obs_shape)
+            model_aup = SafeLifePolicyNetwork(obs_shape)
+
+            #algo_val2 = PPO(
+            #        None, model, model_aup, env_type,
+            #        training_envs=training_envs,
+            #        testing_envs=testing_envs,
+            #        z_dim=8,
+            ##        agent_index=1,
+            #        logdir=subdir, summary_writer=summary_writer)
+            #algo_val2.train(2e6)
+
+            algo = PPO(
+                    None, model, model_aup, env_type,
+                    training_envs=training_envs,
+                    testing_envs=testing_envs,
+                    z_dim=int(args.z),
+                    agent_index=1,
+                    logdir=subdir, summary_writer=summary_writer)
+            algo.train(5e6)
+
+
+
 
         elif args.algo == 'dqn':
             from training.models import SafeLifeQNetwork

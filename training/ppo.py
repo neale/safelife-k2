@@ -78,11 +78,11 @@ class PPO(object):
         self.training_aup = True    # indicator: currently training random reward agent
         self.impact_training = True # indicator: use penalty (True) or not (False) in take_one_step
         self.switch_to_ppo = False  # indicator: turn on PPO (True) or off (False)
-        self.train_aup_steps=1e5
+        self.train_aup_steps=200e3
         self.use_scale = False
         self.value_agent = ppo_agent
         if self.impact_training:
-            self.lamb_schedule = LinearSchedule(1e6, initial_p=1e-3, final_p=.1)
+            self.lamb_schedule = LinearSchedule(1.8e6, initial_p=3, final_p=3)
             self.random_proj = False
             if not self.random_proj:
                 self.load_rendered_state_buffer = False
@@ -166,7 +166,7 @@ class PPO(object):
             ret = obsp.float()
         return ret
 
-    def train_state_encoder(self, envs, buffer_size=20e3):
+    def train_state_encoder(self, envs, buffer_size=100e3):
         if self.state_encoder_path is not None:
             print ('loading state encoder')
             self.state_encoder = load_state_encoder(z_dim=self.z_dim,
@@ -205,7 +205,7 @@ class PPO(object):
         self.state_encoder = train_encoder(device=self.compute_device,
                 data=buffer_th,
                 z_dim=self.z_dim,
-                training_epochs=20,
+                training_epochs=100,
                 exp=self.exp,
                 )
         return
@@ -216,7 +216,6 @@ class PPO(object):
             e.last_obs if hasattr(e, 'last_obs') else e.reset()
             for e in envs
         ]
-        print ([e.action_space for e in envs])
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
         values_q, policies = self.model(tensor_states)
         values = values_q.mean(1)

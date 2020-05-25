@@ -232,10 +232,10 @@ try:
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]
-            training_levels = '8env_append-still-easy/'#random/append-still-easy.yaml',
-            test_levels = '8env_append-still/'#random/append-still-easy.yaml',
+            training_levels = '32env_append-still-easy/'#random/append-still-easy.yaml',
+            test_levels = '32env_append-still-easy/'#random/append-still-easy.yaml',
             level_iterator = SafeLifeLevelIterator(training_levels,
-                                                   distinct_levels=8,
+                                                   distinct_levels=32,
                                                    total_levels=-1)
 
             # test_levels = 'benchmarks/v1.0/append-still.npz'
@@ -332,7 +332,7 @@ try:
                     z_dim=int(args.z),
                     agent_index=1,
                     logdir=subdir, summary_writer=summary_writer)
-            algo.train(5e6)
+            algo.train(2e6)
 
 
 

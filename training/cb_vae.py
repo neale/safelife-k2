@@ -116,6 +116,8 @@ def train_encoder(device, data, z_dim=16, training_epochs=200, exp='test', batch
     dataloader = torch.utils.data.DataLoader(dataset, batch_size, drop_last=True, shuffle=True)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
     total_batches = 0
+    recon_batch = None
+
     for epoch in range(1, training_epochs + 1):
         model.train()
         train_loss = 0
@@ -138,7 +140,7 @@ def train_encoder(device, data, z_dim=16, training_epochs=200, exp='test', batch
                 print('====> Epoch: {} Average loss: {:.4f}'.format(
                     epoch, train_loss / len(dataloader.dataset)))
 
-        if epoch % log_interval == 0:
+        if epoch % log_interval == 0 and epoch > 1:
             torch.save(model.state_dict(), 'models/{}/model_save_epoch_{}.pt'.format(exp, str(epoch)))
             recon_batch = recon_batch[0].view(-1, 1, input_dim, input_dim).cpu()*255.
             data = data.view(-1, 1, input_dim, input_dim).cpu()*255.

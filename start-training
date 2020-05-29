@@ -233,10 +233,12 @@ try:
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]
             training_levels = '8env_append-still-easy/'#random/append-still-easy.yaml',
-            test_levels = '8env_append-still/'#random/append-still-easy.yaml',
+            test_levels = '8env_append-still-easy/'#random/append-still-easy.yaml',
+            #training_levels = 'random/append-still-easy.yaml'
+            #test_levels = 'random/append-still-easy.yaml'
             level_iterator = SafeLifeLevelIterator(training_levels,
-                                                   distinct_levels=8,
-                                                   total_levels=-1)
+                                                  distinct_levels=16,
+                                                  total_levels=-1)
 
             # test_levels = 'benchmarks/v1.0/append-still.npz'
 
@@ -298,7 +300,7 @@ try:
             from training.models import SafeLifePolicyNetwork
             from training.ppo import PPO
             from training.ppo_ensemble import PPO_AUP
-            n_rfns = 5
+            n_rfns = 2
             obs_shape = training_envs[0].observation_space.shape
             model = SafeLifePolicyNetwork(obs_shape)
             models_aup = [SafeLifePolicyNetwork(obs_shape) for _ in range(n_rfns)]
@@ -316,14 +318,14 @@ try:
             model = SafeLifePolicyNetwork(obs_shape)
             model_aup = SafeLifePolicyNetwork(obs_shape)
 
-            #algo_val2 = PPO(
-            #        None, model, model_aup, env_type,
-            #        training_envs=training_envs,
-            #        testing_envs=testing_envs,
-            #        z_dim=8,
-            ##        agent_index=1,
-            #        logdir=subdir, summary_writer=summary_writer)
-            #algo_val2.train(2e6)
+            algo_val2 = PPO(
+                    None, model, model_aup, env_type,
+                    training_envs=training_envs,
+                    testing_envs=testing_envs,
+                    z_dim=8,
+                    agent_index=1,
+                    logdir=subdir, summary_writer=summary_writer)
+            algo_val2.train(2e6)
 
             algo = PPO(
                     None, model, model_aup, env_type,

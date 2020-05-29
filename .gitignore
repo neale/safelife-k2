@@ -9,6 +9,8 @@ plays
 *.so
 8env_append-still/
 8env_append-still-easy/
+16env_append-still-easy/
+32env_append-still-easy/
 buffers/
 build/
 gcloud/

@@ -172,7 +172,6 @@ class SafeLifePolicyNetwork(nn.Module):
     
     def register_rfn(self, dim, device):
         rfn = torch.ones(dim).to(device)
-        rfn = rfn.uniform_(-1, 1).to(device).unsqueeze(0)
         self.random_fn = rfn
 
     def forward(self, obs):

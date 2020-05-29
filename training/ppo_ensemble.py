@@ -32,8 +32,8 @@ class PPO_AUP(object):
     gamma = 0.97
     lmda = 0.95
     learning_rate = 3e-4
-    learning_rate_aup = 1e-4
-    entropy_reg = 0.001 #0.01
+    learning_rate_aup = 3e-4
+    entropy_reg = 0.01 #0.01
 
     entropy_clip = 1.0  # don't start regularization until it drops below this
     vf_coef = 0.5
@@ -76,11 +76,11 @@ class PPO_AUP(object):
         self.training_aup = True    # indicator: currently training random reward agent
         self.impact_training = True # indicator: use penalty (True) or not (False) in take_one_step
         self.switch_to_ppo = False  # indicator: turn on PPO (True) or off (False)
-        self.train_aup_steps=2.5e5
+        self.train_aup_steps=1e6
         if self.impact_training:
-            self.lamb_schedule = LinearSchedule(2e6, initial_p=1e-8, final_p=1e-3)
-            self.load_rendered_state_buffer = True
-            self.state_encoder_path = 'models/{}/100/model_save_epoch_100.pt'.format(self.exp)
+            self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=1e-1)
+            self.load_rendered_state_buffer =False
+            self.state_encoder_path = None# 'models/{}/100/model_save_epoch_100.pt'.format(self.exp)
             self.train_state_encoder(envs=self.training_envs)
             for model in self.models_aup:
                 model.register_rfn(self.state_encoder.z_dim, self.compute_device)
@@ -93,7 +93,7 @@ class PPO_AUP(object):
         states = self.batch_preprocess_states(states, envs)
         self.state_encoder.eval()
         states_z = encode_state(self.state_encoder, states, self.compute_device)
-        rewards = torch.mm(states_z, model_aup.random_fn.T)
+        rewards = states_z
         return rewards
     
     def batch_preprocess_states(self, states, envs):
@@ -107,7 +107,7 @@ class PPO_AUP(object):
     def train_state_encoder(self, envs, buffer_size=100e3):
         if self.state_encoder_path is not None:
             print ('loading state encoder')
-            self.state_encoder = load_state_encoder(z_dim=100, path=self.state_encoder_path, device=self.compute_device)
+            self.state_encoder = load_state_encoder(z_dim=sef.z_dim, path=self.state_encoder_path, device=self.compute_device)
             return
         if self.load_rendered_state_buffer:
             #buffer_np = np.load('buffers/prune-still/state_buffer.npy')
@@ -137,7 +137,12 @@ class PPO_AUP(object):
             buffer_np = buffer_th.cpu().numpy()
             np.save('buffers/{}/state_buffer'.format(self.exp), buffer_np)
             # np.save('buffers/prune-still/state_buffer', buffer_np)
-        self.state_encoder = train_encoder(device=self.compute_device, data=buffer_th, z_dim=100, training_epochs=100, exp=self.exp)
+        self.state_encoder = train_encoder(
+                                    device=self.compute_device,
+                                    data=buffer_th,
+                                    z_dim=1,
+                                    training_epochs=20,
+                                    exp=self.exp)
         return
 
     @named_output('states actions rewards done policies values')
@@ -172,13 +177,14 @@ class PPO_AUP(object):
             if self.impact_training:
                 # calculate AUP penalty
                 penalty = 0.
-                scale = 0.
+                scale = 1.
                 for values_q_aup in val_aup:
                     noop_value = values_q_aup[i, 0]
-                    max_value = values_q_aup[i].max()
+                    max_value = values_q_aup[i].action
                     penalty += (max_value - noop_value).abs()
-                    scale += noop_value
                 lamb = self.lamb_schedule.value(self.num_steps-self.train_aup_steps)
+                self.lamb = lamb
+                self.penalty = penalty / len(val_aup)
                 reward = reward - lamb * (penalty / scale)
                 reward = reward.cpu().tolist()
             rewards.append(reward)
@@ -201,7 +207,8 @@ class PPO_AUP(object):
 
         random_rewards = self.get_rand_rewards(tensor_states, envs, model_aup)
         model_aup.last_rr = random_rewards  # *shrug* for logging
-        random_rewards = random_rewards.squeeze(-1).tolist() # [batch, actions]
+        random_rewards = random_rewards.squeeze(-1)
+        random_rewards = random_rewards.tolist() # [batch, actions]
 
         actions = []
         rewards = []
@@ -370,6 +377,8 @@ class PPO_AUP(object):
                     try:
                         rrnd = model.last_rr.mean().item()
                     except: rrnd = 0
+
+
                     logger.info(
                             "n=%i: agent=%i, loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
                             n, i, loss, entropy, values, advantages, rrnd)
@@ -377,7 +386,8 @@ class PPO_AUP(object):
                     writer.add_scalar("training/agent{}/entropy".format(i), entropy, n)
                     writer.add_scalar("training/agent{}/values".format(i), values, n)
                     writer.add_scalar("training/agent{}/advantages".format(i), advantages, n)
-                    writer.add_scalar("training/agent{}/rand_reward".format(i), rrnd, n)
+                    if self.training_aup:
+                        writer.add_scalar("training/agent{}/rand_reward".format(i), rrnd, n)
                     writer.flush()
             else:
                 batch = self.gen_training_batch(self.steps_per_env, model=self.model, update_n=True)
@@ -391,6 +401,14 @@ class PPO_AUP(object):
                 entropy = entropy.mean().item()
                 values = batch.values.mean().item()
                 advantages = batch.advantages.mean().item()
+                try:
+                    scale = 1.
+                    lamb = self.lamb
+                    penalty = self.penalty.item()
+                except:
+                    scale = 1.
+                    lamb = 0
+                    penalty = 0
                 logger.info(
                         "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
                         n, loss, entropy, values, advantages, rrnd)
@@ -398,6 +416,10 @@ class PPO_AUP(object):
                 writer.add_scalar("training/entropy".format(i), entropy, n)
                 writer.add_scalar("training/values".format(i), values, n)
                 writer.add_scalar("training/advantages".format(i), advantages, n)
+                if not self.training_aup:
+                    writer.add_scalar("training/scale_value", scale, n)
+                    writer.add_scalar("training/lambda", lamb, n)
+                    writer.add_scalar("training/aup_penalty", penalty, n)
                 writer.flush()
 
 

@@ -53,6 +53,7 @@ setuptools.setup(
                 '-O3',
                 '-Wno-shorten-64-to-32',
                 '-Wno-c++11-extensions',
+                '-std=c99',
             ]
         ),
     ],

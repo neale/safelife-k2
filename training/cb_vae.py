@@ -99,8 +99,8 @@ def encode_state(model, state, device):
     return z
 
 
-def load_state_encoder(z_dim, path, device):
-    model = VAE(z_dim).to(device)
+def load_state_encoder(z_dim, path, input_dim, device):
+    model = VAE(z_dim, input_dim).to(device)
     ckpt = torch.load(path)
     model.load_state_dict(ckpt)
     return model

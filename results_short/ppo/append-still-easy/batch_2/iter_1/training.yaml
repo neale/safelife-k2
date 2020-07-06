@@ -1,0 +1,488 @@
+# Training episodes
+---
+
+- name: append-still-easy
+  episode: 1
+  length: 1001
+  reward: 3
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.00, 37.00]
+    crate-gray: [4.88, 21.00]
+    life-gray: [7.00, 0.00]
+- name: append-still-easy
+  episode: 2
+  length: 1001
+  reward: 3
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [29.41, 34.00]
+    crate-gray: [3.01, 31.00]
+    life-gray: [21.00, 0.00]
+- name: append-still-easy
+  episode: 3
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.00, 15.00]
+    crate-gray: [1.92, 41.00]
+    life-gray: [10.00, 0.00]
+- name: append-still-easy
+  episode: 4
+  length: 1001
+  reward: 6
+  performance: [2, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [7.00, 7.00]
+    crate-gray: [4.62, 47.00]
+    life-gray: [11.00, 0.00]
+- name: append-still-easy
+  episode: 5
+  length: 1001
+  reward: 6
+  performance: [2, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.00, 25.00]
+    crate-gray: [2.43, 37.00]
+    life-gray: [8.00, 0.00]
+- name: append-still-easy
+  episode: 6
+  length: 1001
+  reward: 6
+  performance: [2, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [5.34, 15.00]
+    crate-gray: [5.45, 45.00]
+    life-gray: [9.00, 0.00]
+- name: append-still-easy
+  episode: 7
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [10.00, 15.00]
+    crate-gray: [6.29, 40.00]
+    life-gray: [15.00, 0.00]
+- name: append-still-easy
+  episode: 8
+  length: 1001
+  reward: 9
+  performance: [3, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [23.90, 30.00]
+    crate-gray: [2.21, 33.00]
+    life-gray: [6.00, 0.00]
+- name: append-still-easy
+  episode: 9
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [36.45, 37.00]
+    crate-gray: [3.22, 21.00]
+    life-gray: [2.00, 0.00]
+- name: append-still-easy
+  episode: 10
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [34.00, 34.00]
+    crate-gray: [3.62, 31.00]
+    life-gray: [12.00, 0.00]
+- name: append-still-easy
+  episode: 11
+  length: 1001
+  reward: 3
+  performance: [1, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.00, 15.00]
+    crate-gray: [5.65, 41.00]
+    life-gray: [10.00, 0.00]
+- name: append-still-easy
+  episode: 12
+  length: 1001
+  reward: 0
+  performance: [0, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [3.00, 7.00]
+    crate-gray: [5.19, 47.00]
+- name: append-still-easy
+  episode: 13
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [9.58, 25.00]
+    crate-gray: [4.99, 37.00]
+    life-gray: [1.00, 0.00]
+- name: append-still-easy
+  episode: 14
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.00, 15.00]
+    crate-gray: [5.67, 45.00]
+    life-gray: [6.00, 0.00]
+- name: append-still-easy
+  episode: 15
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [14.69, 15.00]
+    crate-gray: [5.22, 40.00]
+    life-gray: [4.00, 0.00]
+- name: append-still-easy
+  episode: 16
+  length: 1001
+  reward: 3
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [22.00, 30.00]
+    crate-gray: [5.76, 33.00]
+    life-gray: [9.03, 0.00]
+- name: append-still-easy
+  episode: 21
+  length: 574
+  reward: 4
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.19, 25.00]
+    crate-gray: [3.84, 37.00]
+    life-gray: [7.00, 0.00]
+- name: append-still-easy
+  episode: 30
+  length: 623
+  reward: 4
+  performance: [1, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.11, 15.00]
+    crate-gray: [6.81, 45.00]
+    life-gray: [6.00, 0.00]
+- name: append-still-easy
+  episode: 24
+  length: 944
+  reward: 13
+  performance: [4, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [22.20, 30.00]
+    crate-gray: [5.25, 33.00]
+    life-gray: [8.00, 0.00]
+- name: append-still-easy
+  episode: 17
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [23.66, 37.00]
+    crate-gray: [3.92, 21.00]
+    life-gray: [8.00, 0.00]
+- name: append-still-easy
+  episode: 18
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [31.00, 34.00]
+    crate-gray: [5.46, 31.00]
+- name: append-still-easy
+  episode: 19
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [12.82, 15.00]
+    crate-gray: [5.55, 41.00]
+    life-gray: [17.21, 0.00]
+- name: append-still-easy
+  episode: 20
+  length: 1001
+  reward: 3
+  performance: [1, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [0.00, 7.00]
+    crate-gray: [7.42, 47.00]
+    life-gray: [13.00, 0.00]
+- name: append-still-easy
+  episode: 22
+  length: 1001
+  reward: 3
+  performance: [1, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [11.29, 15.00]
+    crate-gray: [7.27, 45.00]
+    life-gray: [10.00, 0.00]
+- name: append-still-easy
+  episode: 23
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [10.08, 15.00]
+    crate-gray: [6.25, 40.00]
+    life-gray: [24.00, 0.00]
+- name: append-still-easy
+  episode: 25
+  length: 1001
+  reward: 3
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [34.76, 37.00]
+    crate-gray: [5.79, 21.00]
+    life-gray: [11.00, 0.00]
+- name: append-still-easy
+  episode: 26
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [28.07, 34.00]
+    crate-gray: [7.51, 31.00]
+    life-gray: [9.00, 0.00]
+- name: append-still-easy
+  episode: 27
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [12.23, 15.00]
+    crate-gray: [10.05, 41.00]
+    life-gray: [4.00, 0.00]
+- name: append-still-easy
+  episode: 28
+  length: 1001
+  reward: 0
+  performance: [0, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [7.00, 7.00]
+    crate-gray: [10.19, 47.00]
+    life-gray: [4.00, 0.00]
+- name: append-still-easy
+  episode: 29
+  length: 1001
+  reward: 3
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [11.98, 25.00]
+    crate-gray: [4.88, 37.00]
+    life-gray: [2.00, 0.00]
+- name: append-still-easy
+  episode: 31
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.00, 15.00]
+    crate-gray: [8.95, 40.00]
+    life-gray: [7.00, 0.00]
+- name: append-still-easy
+  episode: 32
+  length: 1001
+  reward: 3
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [21.26, 30.00]
+    crate-gray: [5.98, 33.00]
+    life-gray: [13.01, 0.00]
+- name: append-still-easy
+  episode: 33
+  length: 646
+  reward: 4
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [29.00, 37.00]
+    crate-gray: [1.45, 21.00]
+    life-gray: [3.00, 0.00]
+- name: append-still-easy
+  episode: 40
+  length: 351
+  reward: 10
+  performance: [3, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [14.75, 30.00]
+    crate-gray: [0.38, 33.00]
+    life-gray: [3.00, 0.00]
+- name: append-still-easy
+  episode: 50
+  length: 265
+  reward: 4
+  performance: [1, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [19.55, 34.00]
+    crate-gray: [3.51, 31.00]
+    life-gray: [5.00, 0.00]
+- name: append-still-easy
+  episode: 34
+  length: 1001
+  reward: 15
+  performance: [5, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [28.94, 34.00]
+    crate-gray: [5.96, 31.00]
+    life-gray: [22.00, 0.00]
+- name: append-still-easy
+  episode: 35
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.00, 15.00]
+    crate-gray: [7.11, 41.00]
+- name: append-still-easy
+  episode: 36
+  length: 1001
+  reward: 0
+  performance: [0, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.91, 7.00]
+    crate-gray: [7.61, 47.00]
+    life-gray: [3.02, 0.00]
+- name: append-still-easy
+  episode: 37
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [7.14, 25.00]
+    crate-gray: [6.53, 37.00]
+- name: append-still-easy
+  episode: 38
+  length: 1001
+  reward: 6
+  performance: [2, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [9.56, 15.00]
+    crate-gray: [9.22, 45.00]
+    life-gray: [9.00, 0.00]
+- name: append-still-easy
+  episode: 39
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [11.73, 15.00]
+    crate-gray: [7.84, 40.00]
+    life-gray: [1.00, 0.00]
+- name: append-still-easy
+  episode: 41
+  length: 1001
+  reward: 3
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [32.38, 37.00]
+    crate-gray: [5.68, 21.00]
+    life-gray: [25.00, 0.00]
+- name: append-still-easy
+  episode: 42
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [27.16, 34.00]
+    crate-gray: [5.28, 31.00]
+    life-gray: [1.00, 0.00]
+- name: append-still-easy
+  episode: 43
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.00, 15.00]
+    crate-gray: [9.24, 41.00]
+    life-gray: [3.00, 0.00]
+- name: append-still-easy
+  episode: 44
+  length: 1001
+  reward: 0
+  performance: [0, 33, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.58, 7.00]
+    crate-gray: [7.67, 47.00]
+    life-gray: [8.00, 0.00]
+- name: append-still-easy
+  episode: 45
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.27, 25.00]
+    crate-gray: [3.55, 37.00]
+    life-gray: [8.00, 0.00]
+- name: append-still-easy
+  episode: 46
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.24, 15.00]
+    crate-gray: [8.10, 45.00]
+    life-gray: [4.00, 0.00]
+- name: append-still-easy
+  episode: 47
+  length: 1001
+  reward: 0
+  performance: [0, 40, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.00, 15.00]
+    crate-gray: [6.91, 40.00]
+    life-gray: [1.00, 0.00]
+- name: append-still-easy
+  episode: 48
+  length: 1001
+  reward: 0
+  performance: [0, 22, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [28.02, 30.00]
+    crate-gray: [3.51, 33.00]

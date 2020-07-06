@@ -291,8 +291,8 @@ class RecordingSafeLifeWrapper(BaseWrapper):
                 # If the video name already exists, add a counter to it.
                 idx += 1
                 path = p0 + " ({})".format(idx)
-            #self.video_recorder = SafeLifeRecorder(env=self.env, base_path=path)
-            #self.video_recorder.capture_frame()
+            self.video_recorder = SafeLifeRecorder(env=self.env, base_path=path)
+            self.video_recorder.capture_frame()
 
     def __del__(self):
         # Make sure we've closed up shop when garbage collecting

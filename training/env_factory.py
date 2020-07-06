@@ -9,6 +9,7 @@ from safelife import env_wrappers
  
 from safelife.render_graphics import render_board, render_game
 from safelife.helper_utils import recenter_view
+from types import SimpleNamespace
  
  
 class SafeLifeRGBEnv(SafeLifeEnv):
@@ -120,6 +121,11 @@ def safelife_env_factory(
         # Ensure the recording wrapper has access to the global counter,
         # even if it's disabled in the unwrapped environment.
         env.global_counter = SafeLifeEnv.global_counter
+        
+        env.global_counter.episodes_started=0
+        env.global_counter.episodes_completed=0
+        env.global_counter.num_steps=0
+
         envs.append(env)
 
     return envs

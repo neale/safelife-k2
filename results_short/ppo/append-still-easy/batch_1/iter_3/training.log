@@ -1,0 +1,571 @@
+2020-06-25 12:38:11 INFO (ppo.py:237) n=960: loss=1.43, entropy=2.144, val=-0.187, adv=-0.221
+2020-06-25 12:38:13 INFO (ppo.py:237) n=1920: loss=0.206, entropy=2.167, val=-0.681, adv=-0.0195
+2020-06-25 12:38:14 INFO (ppo.py:237) n=2880: loss=0.207, entropy=2.094, val=-0.791, adv=-0.16
+2020-06-25 12:38:16 INFO (ppo.py:237) n=3840: loss=0.00683, entropy=2.030, val=-0.874, adv=-0.131
+2020-06-25 12:38:18 INFO (ppo.py:237) n=4800: loss=0.196, entropy=1.907, val=-1.19, adv=0.12
+2020-06-25 12:38:20 INFO (ppo.py:237) n=5760: loss=0.0799, entropy=1.826, val=-0.864, adv=-0.0219
+2020-06-25 12:38:22 INFO (ppo.py:237) n=6720: loss=1.54, entropy=1.668, val=-0.81, adv=0.0744
+2020-06-25 12:38:24 INFO (ppo.py:237) n=7680: loss=0.437, entropy=1.807, val=-0.793, adv=-0.0149
+2020-06-25 12:38:26 INFO (ppo.py:237) n=8640: loss=0.0893, entropy=1.843, val=-0.839, adv=0.0772
+2020-06-25 12:38:27 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 12
+  length: 560
+  reward: 7
+  performance: [2, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.33, 30.00]
+    crate-gray: [4.49, 31.00]
+    life-gray: [7.00, 0.00]
+2020-06-25 12:38:28 INFO (ppo.py:237) n=9600: loss=0.296, entropy=1.766, val=-0.71, adv=-0.0979
+2020-06-25 12:38:31 INFO (ppo.py:237) n=10560: loss=0.501, entropy=1.693, val=-0.604, adv=-0.132
+2020-06-25 12:38:33 INFO (ppo.py:237) n=11520: loss=0.00338, entropy=1.798, val=-0.728, adv=0.0652
+2020-06-25 12:38:34 INFO (ppo.py:237) n=12480: loss=0.73, entropy=1.660, val=-0.67, adv=-0.063
+2020-06-25 12:38:36 INFO (ppo.py:237) n=13440: loss=0.00118, entropy=1.718, val=-0.753, adv=0.0512
+2020-06-25 12:38:38 INFO (ppo.py:237) n=14400: loss=0.00333, entropy=1.609, val=-0.626, adv=-0.0185
+2020-06-25 12:38:40 INFO (ppo.py:237) n=15360: loss=0.051, entropy=1.619, val=-0.594, adv=-0.0174
+2020-06-25 12:38:42 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 1
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [26.95, 32.00]
+    crate-gray: [6.22, 26.00]
+    life-gray: [4.00, 0.00]
+2020-06-25 12:38:42 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 2
+  length: 1001
+  reward: 0
+  performance: [0, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.93, 34.00]
+    crate-gray: [7.30, 40.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:38:42 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 3
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [29.94, 35.00]
+    crate-gray: [6.36, 31.00]
+    life-gray: [3.00, 0.00]
+2020-06-25 12:38:42 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 4
+  length: 1001
+  reward: 0
+  performance: [0, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [22.84, 30.00]
+    crate-gray: [5.75, 31.00]
+    life-gray: [2.00, 0.00]
+2020-06-25 12:38:42 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 5
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [13.00, 13.00]
+    crate-gray: [6.50, 37.00]
+    life-gray: [6.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 6
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [21.04, 26.00]
+    crate-gray: [4.20, 25.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 7
+  length: 1001
+  reward: 0
+  performance: [0, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [10.00, 20.00]
+    crate-gray: [5.70, 48.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 8
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [8.08, 12.00]
+    crate-gray: [9.22, 45.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 9
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [26.50, 32.00]
+    crate-gray: [3.97, 26.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 10
+  length: 1001
+  reward: 0
+  performance: [0, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [17.08, 34.00]
+    crate-gray: [7.78, 40.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 11
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [17.51, 35.00]
+    crate-gray: [5.23, 31.00]
+    life-gray: [7.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 13
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [3.00, 13.00]
+    crate-gray: [6.24, 37.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:38:43 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 14
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.18, 26.00]
+    crate-gray: [5.72, 25.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:38:44 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 15
+  length: 1001
+  reward: 0
+  performance: [0, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [8.71, 20.00]
+    crate-gray: [9.02, 48.00]
+2020-06-25 12:38:44 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 16
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [5.00, 12.00]
+    crate-gray: [7.54, 45.00]
+2020-06-25 12:38:44 INFO (ppo.py:237) n=16320: loss=0.0291, entropy=1.668, val=-0.644, adv=0.043
+2020-06-25 12:38:46 INFO (ppo.py:237) n=17280: loss=0.0596, entropy=1.636, val=-0.736, adv=-0.0537
+2020-06-25 12:38:47 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 17
+  length: 549
+  reward: 4
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [24.16, 32.00]
+    crate-gray: [3.14, 26.00]
+    life-gray: [8.00, 0.00]
+2020-06-25 12:38:48 INFO (ppo.py:237) n=18240: loss=0.025, entropy=1.495, val=-0.686, adv=-0.0471
+2020-06-25 12:38:50 INFO (ppo.py:237) n=19200: loss=0.0885, entropy=1.555, val=-0.716, adv=0.000985
+2020-06-25 12:38:52 INFO (ppo.py:237) n=20160: loss=0.0402, entropy=1.605, val=-0.671, adv=0.0168
+2020-06-25 12:38:54 INFO (ppo.py:237) n=21120: loss=0.347, entropy=1.599, val=-0.532, adv=-0.0833
+2020-06-25 12:38:56 INFO (ppo.py:237) n=22080: loss=0.186, entropy=1.329, val=-0.551, adv=-0.259
+2020-06-25 12:38:58 INFO (ppo.py:237) n=23040: loss=0.125, entropy=1.266, val=-0.783, adv=-0.0225
+2020-06-25 12:39:00 INFO (ppo.py:237) n=24000: loss=0.151, entropy=1.401, val=-1.08, adv=0.0491
+2020-06-25 12:39:02 INFO (ppo.py:237) n=24960: loss=0.0492, entropy=1.497, val=-0.962, adv=-0.0307
+2020-06-25 12:39:05 INFO (ppo.py:237) n=25920: loss=0.00143, entropy=1.381, val=-0.87, adv=0.000795
+2020-06-25 12:39:07 INFO (ppo.py:237) n=26880: loss=0.0884, entropy=1.382, val=-0.869, adv=-0.0721
+2020-06-25 12:39:09 INFO (ppo.py:237) n=27840: loss=0.15, entropy=1.291, val=-1.04, adv=-0.0634
+2020-06-25 12:39:09 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 18
+  length: 756
+  reward: 4
+  performance: [1, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [18.56, 34.00]
+    crate-gray: [8.37, 40.00]
+2020-06-25 12:39:11 INFO (ppo.py:237) n=28800: loss=0.012, entropy=1.397, val=-0.928, adv=-0.0107
+2020-06-25 12:39:13 INFO (ppo.py:237) n=29760: loss=-0.000371, entropy=1.426, val=-0.965, adv=-0.0184
+2020-06-25 12:39:15 INFO (ppo.py:237) n=30720: loss=0.00666, entropy=1.351, val=-0.924, adv=-0.002
+2020-06-25 12:39:15 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 31
+  length: 927
+  reward: 4
+  performance: [1, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [8.35, 20.00]
+    crate-gray: [9.31, 48.00]
+2020-06-25 12:39:17 INFO (ppo.py:237) n=31680: loss=0.0158, entropy=1.398, val=-0.736, adv=-0.0751
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 19
+  length: 1001
+  reward: 3
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [24.03, 35.00]
+    crate-gray: [6.50, 31.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 20
+  length: 1001
+  reward: 0
+  performance: [0, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.92, 30.00]
+    crate-gray: [7.32, 31.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 21
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [0.00, 13.00]
+    crate-gray: [0.00, 37.00]
+    life-gray: [2.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 22
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [16.00, 26.00]
+    crate-gray: [3.46, 25.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 23
+  length: 1001
+  reward: 0
+  performance: [0, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [11.62, 20.00]
+    crate-gray: [11.60, 48.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 24
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [7.04, 12.00]
+    crate-gray: [11.53, 45.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:39:18 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 25
+  length: 1001
+  reward: 9
+  performance: [3, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [14.61, 32.00]
+    crate-gray: [6.13, 26.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 26
+  length: 1001
+  reward: 0
+  performance: [0, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [15.14, 34.00]
+    crate-gray: [6.53, 40.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 27
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [16.92, 35.00]
+    crate-gray: [7.14, 31.00]
+    life-gray: [8.00, 0.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 28
+  length: 1001
+  reward: 0
+  performance: [0, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [12.39, 30.00]
+    crate-gray: [9.69, 31.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 29
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [9.99, 13.00]
+    crate-gray: [8.82, 37.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 30
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [8.76, 26.00]
+    crate-gray: [6.48, 25.00]
+2020-06-25 12:39:19 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 32
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [12.00, 12.00]
+    crate-gray: [10.40, 45.00]
+2020-06-25 12:39:20 INFO (ppo.py:237) n=32640: loss=-0.00485, entropy=1.427, val=-0.348, adv=-0.0188
+2020-06-25 12:39:22 INFO (ppo.py:237) n=33600: loss=-0.0015, entropy=1.418, val=-0.399, adv=-0.00555
+2020-06-25 12:39:23 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 33
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [9.17, 32.00]
+    crate-gray: [8.48, 26.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:24 INFO (ppo.py:237) n=34560: loss=0.0146, entropy=1.296, val=-0.506, adv=-0.00584
+2020-06-25 12:39:26 INFO (ppo.py:237) n=35520: loss=0.00423, entropy=1.365, val=-0.487, adv=-0.0416
+2020-06-25 12:39:28 INFO (ppo.py:237) n=36480: loss=0.0109, entropy=1.437, val=-0.545, adv=0.0178
+2020-06-25 12:39:30 INFO (ppo.py:237) n=37440: loss=0.0138, entropy=1.400, val=-0.498, adv=-0.0829
+2020-06-25 12:39:30 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 43
+  length: 342
+  reward: 4
+  performance: [1, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [8.68, 35.00]
+    crate-gray: [2.47, 31.00]
+2020-06-25 12:39:30 INFO (env_wrappers.py:122) Starting video: training-episode-50-37497.mp4
+2020-06-25 12:39:33 INFO (ppo.py:237) n=38400: loss=0.00833, entropy=1.433, val=-0.676, adv=-0.0456
+2020-06-25 12:39:35 INFO (ppo.py:237) n=39360: loss=0.154, entropy=1.371, val=-0.732, adv=0.167
+2020-06-25 12:39:38 INFO (ppo.py:237) n=40320: loss=0.138, entropy=1.244, val=-0.624, adv=-0.0203
+2020-06-25 12:39:40 INFO (ppo.py:237) n=41280: loss=0.181, entropy=1.252, val=-0.748, adv=0.05
+2020-06-25 12:39:43 INFO (ppo.py:237) n=42240: loss=0.0511, entropy=1.257, val=-0.699, adv=-0.0428
+2020-06-25 12:39:45 INFO (ppo.py:237) n=43200: loss=0.0413, entropy=1.308, val=-0.733, adv=-0.0191
+2020-06-25 12:39:47 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 34
+  length: 1001
+  reward: 0
+  performance: [0, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [7.00, 34.00]
+    crate-gray: [10.98, 40.00]
+2020-06-25 12:39:47 INFO (ppo.py:237) n=44160: loss=0.0134, entropy=1.216, val=-0.734, adv=0.00497
+2020-06-25 12:39:50 INFO (ppo.py:237) n=45120: loss=0.078, entropy=1.305, val=-0.841, adv=0.0699
+2020-06-25 12:39:50 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 39
+  length: 820
+  reward: 4
+  performance: [1, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [1.96, 20.00]
+    crate-gray: [9.18, 48.00]
+    life-gray: [1.00, 0.00]
+2020-06-25 12:39:52 INFO (ppo.py:237) n=46080: loss=0.0207, entropy=1.374, val=-0.891, adv=-0.00171
+2020-06-25 12:39:55 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 35
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [24.60, 35.00]
+    crate-gray: [6.45, 31.00]
+    life-gray: [5.00, 0.00]
+2020-06-25 12:39:55 INFO (ppo.py:237) n=47040: loss=0.0119, entropy=1.503, val=-0.838, adv=0.0735
+2020-06-25 12:39:57 INFO (ppo.py:237) n=48000: loss=0.606, entropy=1.495, val=-0.754, adv=0.193
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 36
+  length: 1001
+  reward: 0
+  performance: [0, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [16.73, 30.00]
+    crate-gray: [8.08, 31.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 37
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [5.00, 13.00]
+    crate-gray: [6.32, 37.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 38
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [11.82, 26.00]
+    crate-gray: [8.61, 25.00]
+    life-gray: [7.00, 0.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 40
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [0.00, 12.00]
+    crate-gray: [11.35, 45.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 41
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.00, 32.00]
+    crate-gray: [5.57, 26.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 42
+  length: 1001
+  reward: 0
+  performance: [0, 20, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [9.12, 34.00]
+    crate-gray: [11.82, 40.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 44
+  length: 1001
+  reward: 0
+  performance: [0, 23, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.14, 30.00]
+    crate-gray: [4.57, 31.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 45
+  length: 1001
+  reward: 0
+  performance: [0, 30, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [0.00, 13.00]
+    crate-gray: [11.06, 37.00]
+2020-06-25 12:39:58 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 46
+  length: 1001
+  reward: 0
+  performance: [0, 28, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [20.00, 26.00]
+    crate-gray: [3.78, 25.00]
+2020-06-25 12:39:59 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 47
+  length: 1001
+  reward: 0
+  performance: [0, 25, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [4.00, 20.00]
+    crate-gray: [9.57, 48.00]
+2020-06-25 12:39:59 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 48
+  length: 1001
+  reward: 0
+  performance: [0, 34, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [0.38, 12.00]
+    crate-gray: [5.80, 45.00]
+    life-gray: [2.00, 0.00]
+2020-06-25 12:40:01 INFO (ppo.py:237) n=48960: loss=0.00264, entropy=1.475, val=-0.488, adv=-0.0421
+2020-06-25 12:40:03 INFO (env_wrappers.py:236) 
+- name: append-still-easy
+  episode: 49
+  length: 1001
+  reward: 0
+  performance: [0, 19, 0.01]
+  impact_penalty: 0
+  side effects:
+    life-green: [19.69, 32.00]
+    crate-gray: [5.32, 26.00]
+2020-06-25 12:40:04 INFO (ppo.py:237) n=49920: loss=0.0176, entropy=1.491, val=-0.608, adv=-0.00629
+2020-06-25 12:40:05 INFO (env_wrappers.py:146) Ending video: training-episode-50-37497.mp4

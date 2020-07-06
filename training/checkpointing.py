@@ -29,11 +29,11 @@ def get_all_checkpoints(logdir):
     return sorted(files, key=step_from_checkpoint)
 
 
-def save_checkpoint(path, obj, attribs, max_checkpoints=3):
+def save_checkpoint(path, obj, attribs, prefix='', max_checkpoints=3):
     num_steps = SafeLifeEnv.global_counter.num_steps
     if os.path.isdir(path):
         logdir = path
-        path = os.path.join(path, 'checkpoint-%i.data' % num_steps)
+        path = os.path.join(path, prefix+'checkpoint-%i.data' % num_steps)
     else:
         logdir = os.path.dirname(path)
 
@@ -59,7 +59,8 @@ def load_checkpoint(path, obj):
         path = checkpoints and checkpoints[-1]
     if not path or not os.path.exists(path):
         return
-
+    
+    print ('loading checkpoint from {}'.format(path))
     checkpoint = torch.load(path)
 
     for key, val in checkpoint.items():

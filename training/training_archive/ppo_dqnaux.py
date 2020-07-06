@@ -10,6 +10,8 @@ from safelife.render_graphics import render_board
 
 from .utils import named_output, round_up, LinearSchedule
 from . import checkpointing
+from .aae import *
+from .cb_vae import train_encoder, load_state_encoder, encode_state
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
@@ -52,18 +54,27 @@ class PPO(object):
 
     training_envs = None
     testing_envs = None
-    
     epsilon = 0.0  # for exploration
 
 
-    def __init__(self, model, **kwargs):
+    def __init__(self, model_aup, model_aux, env_type, z_dim, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
 
-        self.model = model.to(self.compute_device)
-        self.optimizer = optim.Adam(
-            self.model.parameters(), lr=self.learning_rate)
+        self.model_aup = model_aup.to(self.compute_device)
+        self.model_aux = model_aux.training_model_aux.to(self.compute_device)
+        self.optimizer_aup = optim.Adam(
+            self.model_aup.parameters(), lr=self.learning_rate_aup)
+        self.optimizer_aux = model_aux.optimizer_aux
         checkpointing.load_checkpoint(self.logdir, self)
+        
+        """ AUP-specific parameters """
+        self.exp = env_type
+        self.z_dim = z_dim
+        self.use_scale = False
+        self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=1e-1)
+        self.idx = 1
+       
 
     @named_output('states actions rewards done policies values')
     def take_one_step(self, envs):
@@ -72,11 +83,13 @@ class PPO(object):
             for e in envs
         ]
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-        values_q, policies = self.model(tensor_states)
-        values = values_q.mean(1)
+        values_q_aup, policies_aup = self.model_aup(tensor_states)
+        values_aup = values_q_aup.mean(1)
+
+        values_q_aux = self.model_aux(tensor_states)  # DQN only has Q function
         
-        values = values.detach().cpu().numpy()
-        policies = policies.detach().cpu().numpy()
+        values = values_aup.detach().cpu().numpy()
+        policies = policies_aup.detach().cpu().numpy()
         
         actions = []
         rewards = []
@@ -88,6 +101,24 @@ class PPO(object):
                 obs = env.reset()
             env.last_obs = obs
             actions.append(action)
+
+            # calculate AUP penalty
+            inaction_value = values_q_aux[i, 0]
+            max_value = values_q_aux[i, action]
+            penalty = (max_value - inaction_value).abs()
+            
+            if not self.use_scale:
+                scale = 1.
+            else:
+                scale = inaction_value
+            self.scale = scale
+
+            lamb = self.lamb_schedule.value(self.num_steps)
+            self.lamb = lamb
+            self.penalty = penalty
+            reward = reward - lamb * (penalty / scale)
+
+            reward = reward.cpu().tolist()
             rewards.append(reward)
             dones.append(done)
        
@@ -122,14 +153,12 @@ class PPO(object):
             ``(steps_per_env * num_env, ...)``.
             Otherwise, shape will be ``(steps_per_env, num_env, ...)``.
         """
-        model = self.model
-        take_one_step = self.take_one_step
 
-        steps = [take_one_step(self.training_envs) for _ in range(steps_per_env)] # [steps]
+        steps = [self.take_one_step(self.training_envs) for _ in range(steps_per_env)] # [steps]
         final_states = [e.last_obs for e in self.training_envs]
         tensor_states = torch.tensor(
             final_states, device=self.compute_device, dtype=torch.float32)
-        final_vals = model(tensor_states)[0]
+        final_vals = self.model_aup(tensor_states)[0]
         final_vals = final_vals.mean(1).detach().cpu().numpy()  # adjust for learning Q function
         values = np.array([s.values for s in steps] + [final_vals])
 
@@ -164,7 +193,7 @@ class PPO(object):
         self.num_episodes += np.sum(done)
         return (
                 t([s.states for s in steps]), t(actions, torch.int64),
-                t(probs), t(returns), t(advantages), t(values[:-1]),
+                t(probs), t(returns), t(advantages), t(values[:-1])
                 )
 
     def calculate_loss(
@@ -173,8 +202,7 @@ class PPO(object):
         All parameters ought to be tensors on the appropriate compute device.
         ne_step = s
         """
-        model = self.model
-        values, policy = model(states)
+        values, policy = self.model_aup(states)
         values = values.mean(1)  # adjust for learning Q function
 
 
@@ -191,7 +219,7 @@ class PPO(object):
 
         entropy = torch.sum(-policy * torch.log(policy + 1e-12), dim=-1)
         entropy_loss = torch.clamp(entropy.mean(), max=self.entropy_clip)
-        entropy_loss *= -self.entropy_reg
+        entropy_loss *= -self.entropy_aup
 
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
@@ -205,10 +233,9 @@ class PPO(object):
                 entropy, loss = self.calculate_loss(
                     batch.states[k], batch.actions[k], batch.action_prob[k],
                     batch.values[k], batch.returns[k], batch.advantages[k])
-                optimizer = self.optimizer
-                optimizer.zero_grad()
+                self.optimizer_aup.zero_grad()
                 loss.backward()
-                optimizer.step()
+                self.optimizer_aup.step()
 
     def train(self, steps):
         print ('starting training')
@@ -223,6 +250,8 @@ class PPO(object):
             self.train_batch(batch)
 
             n = self.num_steps
+            
+
             if n >= next_report and self.summary_writer is not None:
                 writer = self.summary_writer
                 entropy, loss = self.calculate_loss(
@@ -232,27 +261,34 @@ class PPO(object):
                 entropy = entropy.mean().item()
                 values = batch.values.mean().item()
                 advantages = batch.advantages.mean().item()
+                try:
+                    rrnd = self.rand_rewards.mean().item()
+                except:
+                    rrnd = 0
+                try:
+                    scale = self.scale.mean().item()
+                    lamb = self.lamb
+                    penalty = self.penalty.item()
+                except:
+                    scale = 0
+                    lamb = 0
+                    penalty = 0
                 logger.info(
-                    "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g",
-                    n, loss, entropy, values, advantages)
-                writer.add_scalar("training/loss", loss, n)
-                writer.add_scalar("training/entropy", entropy, n)
-                writer.add_scalar("training/values", values, n)
-                writer.add_scalar("training/advantages", advantages, n)
+                    "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
+                    n, loss, entropy, values, advantages, rrnd)
+                writer.add_scalar("training/{}/loss".format(self.idx), loss, n)
+                writer.add_scalar("training/{}/entropy".format(self.idx), entropy, n)
+                writer.add_scalar("training/{}/values".format(self.idx), values, n)
+                writer.add_scalar("training/{}/advantages".format(self.idx), advantages, n)
+                writer.add_scalar("training/{}/scale".format(self.idx), scale, n)
+                writer.add_scalar("training/{}/lambda".format(self.idx), lamb, n)
+                writer.add_scalar("training/{}/aup_penalty".format(self.idx), penalty, n)
                 writer.flush()
 
             if n >= next_checkpoint:
                 checkpointing.save_checkpoint(self.logdir, self, [
-                    'model', 'optimizer',
+                    'model_aux', 'optimizer_aux', 'model_aup', 'optimizer_aup',
                 ])
 
             if n >= next_test:
                 self.run_test_envs()
-        for env in self.training_envs:
-            env.global_counter = None
-            env.close()
-        
-        for env in self.testing_envs:
-            env.global_counter = None
-            env.close()
-

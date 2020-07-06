@@ -12,12 +12,8 @@ import shutil
 import logging
 import logging.config
 
-import numpy as np
-
 env_types = [
-    'test',
     'append-still',
-    'append-still-easy',
     'append-spawn',
     'prune-still',
     'prune-spawn',
@@ -45,18 +41,7 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', default='ppo', choices=(
-    'ppo',
-    'dqn',
-    'ppo-tf',
-    'ppo-rr',
-    'ppo-eval',
-    'ensemble',
-    'aup'))
-parser.add_argument('--config', default='ppo', choices=('ppo', 'aup', 'aupp', 'naive'))
-parser.add_argument('--z', default=1.0)
-parser.add_argument('--envn', default=1)
-parser.add_argument('--run_suite', action='store_true')
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'))
 args = parser.parse_args()
 
 # Setup the directories
@@ -82,7 +67,6 @@ with open(active_job_file, 'w') as f:
     f.write(data_dir)
 job_name = os.path.split(data_dir)[1]
 
-
 if os.path.exists(data_dir) and args.data_dir is not None:
     print("The directory '%s' already exists. "
           "Would you like to overwrite the old data, append to it, or abort?" %
@@ -98,7 +82,6 @@ if os.path.exists(data_dir) and args.data_dir is not None:
         print("Aborting.")
         exit()
 
-# response = 'append'
 os.makedirs(data_dir, exist_ok=True)
 logfile = os.path.join(data_dir, 'training.log')
 
@@ -186,6 +169,7 @@ if args.port:
 
 
 # Start training!
+
 def spawn_loader(name):
     # When training in spawn environments, we first pre-train in the static
     # environments for a couple million time steps. This just provides more
@@ -193,44 +177,15 @@ def spawn_loader(name):
     from safelife.file_finder import SafeLifeLevelIterator
     from safelife.safelife_env import SafeLifeEnv
 
-    loader1 = SafeLifeLevelIterator('safelife/levels/random/append-still-easy'.format(name))
-    # loader2 = SafeLifeLevelIterator('8env_{}-spawn'.format(name),
-    loader2 = SafeLifeLevelIterator('safelife/levels/random/append-spawn'.format(name))
+    loader1 = SafeLifeLevelIterator('random/{}-still-easy'.format(name))
+    loader2 = SafeLifeLevelIterator('random/{}-spawn'.format(name))
+
     t0 = 1.5e6 if name == 'prune' else 2.0e6
     while True:
-        if SafeLifeEnv.global_counter.num_steps < 0:
+        if SafeLifeEnv.global_counter.num_steps < t0:
             yield next(loader1)
         else:
             yield next(loader2)
-
-
-def spawn_loader_aup(name):
-    # When training in spawn environments, we first pre-train in the static
-    # environments for a couple million time steps. This just provides more
-    # opportunities for rewards so makes the initial training easier.
-    from safelife.file_finder import SafeLifeLevelIterator
-    from safelife.safelife_env import SafeLifeEnv
-
-    loader1 = SafeLifeLevelIterator('safelife/levels/random/append-still-easy'.format(name))
-    loader2 = SafeLifeLevelIterator('8env_{}-spawn'.format(name),
-                                                   distinct_levels=8,
-                                                   total_levels=-1)
-    trand = 0
-    tstill = 1.0e6
-    tspawn = 3.0e6
-    while True:
-        count = SafeLifeEnv.global_counter.num_steps
-        if count >= trand and count < tstill:
-            p = np.random.randint(2, size=1)[0]
-            yield next(loader1) if p else next(loader2)
-
-        elif count >= tstill and count < tspawn:
-            yield next(loader1)
-        
-        elif count >= tspawn:
-            yield next(loader2)
-        else:
-            raise ValueError
 
 
 try:
@@ -246,76 +201,23 @@ try:
         else:
             from tensorboardX import SummaryWriter
 
-        if env_type == 'test':
-            t_penalty = [1.0e6, 2.0e6]
-            t_performance = [1.0e6, 2.0e6]
-            training_levels = 'puzzles/14 - Blinky maze.npz'
-            test_levels = 'puzzles/14 - Blinky maze.npz'
-            level_iterator = SafeLifeLevelIterator(training_levels,
-                    distinct_levels=1,
-                    total_levels=-1)
-
-            # test_levels = 'benchmarks/v1.0/append-still.npz'
-
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]
-            training_levels = '8env_append-still-hard'
-            nlevels = 8
-            if args.algo == 'ppo-eval':
-                training_levels = '8env_append-still-hard/8env_append-still-hard-{}.npz'.format(
-                        args.envn)
-                nlevels = 1
-
-            test_levels = training_levels
-            level_iterator = SafeLifeLevelIterator(training_levels,
-                                                  distinct_levels=nlevels,
-                                                  total_levels=-1)
-        if env_type == 'append-still-easy':
-            t_penalty = [1.0e6, 2.0e6]
-            t_performance = [1.0e6, 2.0e6]
-            training_levels = 'level_sets/append-still-easy/8env/batch1/'
-            nlevels = 8
-            if args.algo == 'ppo-eval':
-                training_levels = '8env_append-still-easy/8env_append-stll-easy-{}.npz'.format(
-                        args.envn)
-                nlevels = 1
-            test_levels = training_levels
-            level_iterator = SafeLifeLevelIterator(training_levels,
-                    distinct_levels=nlevels,
-                    total_levels=-1)
-
-
-            # test_levels = 'benchmarks/v1.0/append-still.npz'
+            level_iterator = SafeLifeLevelIterator('random/append-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/append-still.npz'
 
         elif env_type == 'prune-still':
             t_penalty = [0.5e6, 1.5e6]
             t_performance = [0.5e6, 1.5e6]
-            training_levels = '8env_prune-still-easy'
-            nlevels = 8
-            if args.algo == 'ppo-eval':
-                training_levels = '8env_prune-still-easy/8env_prune-still-easy-{}.npz'.format(
-                        args.envn)
-                nlevels = 1
-            test_levels = training_levels
-            level_iterator = SafeLifeLevelIterator(training_levels,
-                                                   distinct_levels=nlevels,
-                                                   total_levels=-1)
+            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/prune-still.npz'
 
         elif env_type == 'append-spawn':
             t_penalty = [2.0e6, 3.5e6]
             t_performance = [1.0e6, 2.0e6]
             level_iterator = spawn_loader('append')
-            nlevels = 8
-            if args.algo == 'ppo-eval':
-                training_levels = '8env_append-spawn/8env_append_spawn-{}.npz'.format(
-                        args.envn)
-                nlevels = 1
-                level_iterator = SafeLifeLevelIterator(training_levels,
-                        distinct_levels=nlevels,
-                        total_levels=-1)
-            test_levels = training_levels
-            #test_levels = 'benchmarks/v1.0/append-spawn.npz'
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
 
         elif env_type == 'prune-spawn':
             t_penalty = [1.5e6, 2.5e6]
@@ -326,9 +228,7 @@ try:
         elif env_type == 'navigate':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
-            level_iterator = SafeLifeLevelIterator('random/navigation.yaml',
-                                                   distinct_levels=4,
-                                                   total_levels=-1)
+            level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
             test_levels = 'benchmarks/v1.0/navigation.npz'
         else:
             print("Unexpected environment type '{}'".format(env_type))
@@ -339,13 +239,12 @@ try:
             logdir=subdir, summary_writer=summary_writer, num_envs=16,
             impact_penalty=linear_schedule(t_penalty, [0, penalty]),
             min_performance=linear_schedule(t_performance, [0.01, 0.3]),
-            #min_performance=linear_schedule(t_performance, [0.3, 0.3]),
             level_iterator=level_iterator,
         )
         testing_envs = safelife_env_factory(
-            logdir=subdir, summary_writer=summary_writer, num_envs=8, testing=True,
+            logdir=subdir, summary_writer=summary_writer, num_envs=5, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=8, total_levels=-1)
+                test_levels, distinct_levels=5, total_levels=-1)
         )
 
         if args.algo == 'ppo-tf':
@@ -358,94 +257,18 @@ try:
                 logdir=subdir, summary_writer=summary_writer)
             algo.train(6e6)
 
-        elif args.algo == 'ensemble':
-            from training.models import SafeLifePolicyNetwork
-            from training.ppo_ensemble import PPO_AUP
-            n_rfns = 2
+        elif args.algo == 'ppo':
+            from training.models_safelife import SafeLifePolicyNetwork
+            from training.ppo import PPO
+
             obs_shape = training_envs[0].observation_space.shape
             model = SafeLifePolicyNetwork(obs_shape)
-            models_aup = [SafeLifePolicyNetwork(obs_shape) for _ in range(n_rfns)]
-            algo = PPO_AUP(
+            algo = PPO(
                 model,
-                models_aup,
-                env_type,
-                n_rfns=n_rfns,
                 training_envs=training_envs,
                 testing_envs=testing_envs,
-                logdir=subdir,
-                summary_writer=summary_writer)
-            algo.train(5e6)
-        
-        elif args.algo == 'ppo-rr':
-            from training.models import SafeLifePolicyNetwork
-            from training.ppo import PPO
-            obs_shape = training_envs[0].observation_space.shape
-            model = SafeLifePolicyNetwork(obs_shape)
-            model_aup = SafeLifePolicyNetwork(obs_shape)
-            
-            if 0:
-                algo_val2 = PPO(
-                        None, model, model_aup, env_type,
-                        training_envs=training_envs,
-                        testing_envs=testing_envs,
-                        z_dim=8,
-                        agent_index=1,
-                        logdir=subdir, summary_writer=summary_writer)
-                algo_val2.train(1e6)
-            
-            algo = PPO(
-                    None, model, model_aup, env_type,
-                    training_envs=training_envs,
-                    testing_envs=testing_envs,
-                    z_dim=int(args.z),
-                    name=args.config,
-                    agent_index=1,
-                    logdir=subdir, summary_writer=summary_writer)
+                logdir=subdir, summary_writer=summary_writer)
             algo.train(6e6)
-
-        elif args.algo == 'aup':
-            from training.models import SafeLifePolicyNetwork
-            from training.aux_training_ppo import PPO_AUX
-            from training.aup_training_ppo import PPO_AUP
-
-            obs_shape = training_envs[0].observation_space.shape
-            train_model_aux = SafeLifePolicyNetwork(obs_shape)
-            train_model_aup = SafeLifePolicyNetwork(obs_shape)
-
-            aux_model = PPO_AUX(
-                    train_model_aux, env_type,
-                    training_envs=training_envs,
-                    testing_envs=testing_envs,
-                    z_dim=int(args.z),
-                    logdir=subdir, summary_writer=summary_writer)
-            aux_model.train(1e6)   
-
-            aup_model = PPO_AUP(
-                    train_model_aup, aux_model, env_type,
-                    training_envs=training_envs,
-                    testing_envs=testing_envs,
-                    z_dim=int(args.z),
-                    logdir=subdir, summary_writer=summary_writer)
-            aup_model.train(4e6)   
-
-        elif args.algo == 'ppo-eval':
-            from training.models import SafeLifePolicyNetwork
-            from training.ppo_eval import PPO_eval
-            obs_shape = training_envs[0].observation_space.shape
-            model = SafeLifePolicyNetwork(obs_shape)
-            model_aup = SafeLifePolicyNetwork(obs_shape)
-
-            algo = PPO_eval(
-                    None, model, model_aup, env_type,
-                    training_envs=training_envs,
-                    testing_envs=testing_envs,
-                    z_dim=1,
-                    name=args.config,
-                    level_idx=args.envn,
-                    agent_index=1,
-                    logdir=subdir, summary_writer=summary_writer)
-            algo.test()
-
 
         elif args.algo == 'dqn':
             from training.models import SafeLifeQNetwork
@@ -461,7 +284,7 @@ try:
                 logdir=subdir, summary_writer=summary_writer)
             algo.train(6e6)
 
-                                  
+
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

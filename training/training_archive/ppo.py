@@ -4,22 +4,20 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torchvision
-import torch.nn.functional as F
-
-import matplotlib.pyplot as plt
 
 from safelife.helper_utils import load_kwargs
 from safelife.render_graphics import render_board
 
 from .utils import named_output, round_up, LinearSchedule
 from . import checkpointing
+from .aae import *
 from .cb_vae import train_encoder, load_state_encoder, encode_state
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
 
 
-class PPO_AUP(object):
+class PPO(object):
     summary_writer = None
     logdir = None
 
@@ -34,8 +32,8 @@ class PPO_AUP(object):
     lmda = 0.95
     learning_rate = 3e-4
     learning_rate_aup = 3e-4
-    entropy_reg = 0.01 #0.01
-    entropy_reg_aux = 0.1 #0.01
+    entropy_reg = 0.01 
+    entropy_aup = 0.1
 
     entropy_clip = 1.0  # don't start regularization until it drops below this
     vf_coef = 0.5
@@ -59,44 +57,74 @@ class PPO_AUP(object):
     epsilon = 0.0  # for exploration
 
 
-    def __init__(self, model, models_aup, env_type, n_rfns, **kwargs):
+    def __init__(self, ppo_agent, model, model_aup, env_type, z_dim, agent_index, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
 
         self.model = model.to(self.compute_device)
-        self.models_aup = [m.to(self.compute_device) for m in models_aup]
+        self.model_aup = model_aup.to(self.compute_device)
+        self.idx = agent_index
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=self.learning_rate)
-        self.optimizers_aup = [optim.Adam(m.parameters(),
-                               lr=self.learning_rate_aup) for m in self.models_aup]
+        self.optimizer_aup = optim.Adam(
+            self.model_aup.parameters(), lr=self.learning_rate_aup)
         checkpointing.load_checkpoint(self.logdir, self)
         self.exp = env_type
-
         """ AUP-specific parameters """
+        self.z_dim = z_dim
         self.state_encoder = None
-        self.z_dim = 1
-        self.n_random_reward_fns = n_rfns
+        self.n_random_reward_fns = 1
         self.training_aup = True    # indicator: currently training random reward agent
         self.impact_training = True # indicator: use penalty (True) or not (False) in take_one_step
         self.switch_to_ppo = False  # indicator: turn on PPO (True) or off (False)
-        self.train_aux_steps=1e6
+        self.train_aup_steps=1e6
+        self.use_scale = False
+        self.value_agent = ppo_agent
+        #self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=.1)
         if self.impact_training:
             self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=1e-1)
-            self.load_rendered_state_buffer = False
-            self.state_encoder_path = None#'models/{}/model_save_epoch_20.pt'.format(self.exp)
-            self.train_state_encoder(envs=self.training_envs)
-            for model in self.models_aup:
-                model.register_rfn(self.state_encoder.z_dim, self.compute_device)
+            self.random_proj = False
+            if not self.random_proj:
+                self.load_rendered_state_buffer = False
+                self.state_encoder_path = None#'models/{}/100/model_save_epoch_100.pt'.format(self.exp)
+                #self.train_state_encoder(envs=self.training_envs)
+                #self.register_random_reward_functions()
+            else:
+                self.random_projection = torch.ones(1, 90, 90).uniform_(-1, 1).cuda()
+                self.random_projection = self.random_projection.unsqueeze(0).repeat(16, 1, 1, 1)
+        
     
-    def get_rand_rewards(self, states, envs, model_aup):
-        if not torch.is_tensor(states):
-            states = torch.tensor(states)
-        if states.dim() != 4:
-            states = states.unsqueeze(0)
-        states = self.batch_preprocess_states(states, envs)
-        self.state_encoder.eval()
-        states_z = encode_state(self.state_encoder, states, self.compute_device)
-        rewards = states_z
+    def register_random_reward_functions(self):
+        """ generates random linear funcitons over the encoder space """
+        n_fns = self.n_random_reward_fns
+        self.random_fns = []
+        for i in range(n_fns):
+            rfn = torch.ones(self.z_dim).to(self.compute_device)
+            # rfn = rfn.uniform_(0, 1).cuda()
+            self.random_fns.append(rfn)
+        print ('registering random reward function of dim ', self.z_dim)
+        self.random_fns = torch.stack(self.random_fns)
+
+    def get_rand_rewards(self, states):
+        states = torch.stack(states)
+        if self.random_proj:
+            states = states.cuda()
+            random_projection = self.random_projection.transpose(2, 3)
+            rewards = torch.einsum('abcd, abde -> abce', states, random_projection)
+            rewards = rewards.view(rewards.size(0), -1).sum(1)
+        else:
+            random_reward_fns = self.random_fns
+            self.state_encoder.eval()
+            states_z = encode_state(self.state_encoder, states, self.compute_device)
+            rewards = []
+            if self.n_random_reward_fns > 1:
+                for i in range(self.n_random_reward_fns):
+                    rr = torch.tensor(random_reward_fns.T[:, i]).unsqueeze(1)
+                    rewards.append(torch.mm(states_z, rr))
+                rewards = torch.stack(rewards)
+                rewards = rewards.sum(0)
+            else:
+                rewards = torch.mm(states_z, random_reward_fns.T)
         return rewards
     
     def batch_preprocess_states(self, states, envs):
@@ -104,20 +132,47 @@ class PPO_AUP(object):
         obs = np.asarray(obs)
         obs = torch.from_numpy(np.matmul(obs[:, :, :, :3], [0.299, 0.587, 0.114]))
         obs = obs.unsqueeze(0) # [1, batch, H, W]
-        obs = F.avg_pool2d(obs, 5, 4)/255.
+        if obs.size(-1) == 210: # test env
+            obs = F.avg_pool2d(obs, 2, 2)/255.
+        else: # random env
+            obs = F.avg_pool2d(obs, 5, 4)/255.
         return obs.float()
+    
+    def render_state(self, env, reset=False, return_original=False):
+        if reset:
+            _ = env.reset
+        obs = render_board(env.game.board, env.game.goals, env.game.orientation)
+        obs = np.asarray(obs)
+        obsp = torch.from_numpy(obs)
+        obsp = obsp.float()/255.
+        return obsp
+
+    def preprocess_state(self, env, reset=False, return_original=False):
+        if reset:
+            _ = env.reset()
+        obs = render_board(env.game.board, env.game.goals, env.game.orientation)
+        obs = np.asarray(obs)
+        obsp = torch.from_numpy(np.matmul(obs[:, :, :3], [0.299, 0.587, 0.114]))
+        obsp = obsp.unsqueeze(0) # [1, batch, H, W]
+        if obsp.size(-1) == 210: # test env
+            obsp = F.avg_pool2d(obsp, 2, 2)/255.
+        else: # random env
+            obsp = F.avg_pool2d(obsp, 5, 4)/255.
+        if return_original:
+            ret = (obsp.float(), obs)
+        else:
+            ret = obsp.float()
+        return ret
 
     def train_state_encoder(self, envs, buffer_size=100e3):
         if self.state_encoder_path is not None:
             print ('loading state encoder')
             self.state_encoder = load_state_encoder(z_dim=self.z_dim,
                                                     path=self.state_encoder_path,
-                                                    input_dim=90,
                                                     device=self.compute_device)
             return
         if self.load_rendered_state_buffer:
-            #buffer_np = np.load('buffers/prune-still/state_buffer.npy')
-            buffer_np = np.load('buffers/{}/append-still/state_buffer.npy'.format(self.exp))
+            buffer_np = np.load('buffers/{}/state_buffer.npy'.format(self.exp))
             buffer_th = torch.from_numpy(buffer_np).float()
         else:
             envs = [e.unwrapped for e in envs]
@@ -126,6 +181,7 @@ class PPO_AUP(object):
             ]
             print ('gathering data from every env N={}'.format(len(envs)))
             buffer = []
+            samples = []
             buffer_size = int(buffer_size // len(envs))
             for env in envs:
                 for _ in range(buffer_size):
@@ -133,26 +189,27 @@ class PPO_AUP(object):
                     obs, _, done, _ = env.step(action)
                     if done:
                         obs = env.reset()
-                    obs = render_board(env.game.board, env.game.goals, env.game.orientation)
-                    obs = torch.tensor(np.dot(obs[...,:3], [0.299, 0.587, 0.114]))
-                    obs = obs.unsqueeze(0).unsqueeze(0)
-                    obs = F.avg_pool2d(obs, 5, 4).squeeze(0).squeeze(0)/255.
+                    obs = self.preprocess_state(env, return_original=False)
                     buffer.append(obs)
+                    #samples.append(sample)
             print ('collected data')
             buffer_th = torch.stack(buffer)
             buffer_np = buffer_th.cpu().numpy()
+            #np.random.shuffle(samples)
+            #np.save('buffers/{}/example_data'.format(self.exp), samples[:200])
             np.save('buffers/{}/state_buffer'.format(self.exp), buffer_np)
-            # np.save('buffers/prune-still/state_buffer', buffer_np)
-        self.state_encoder = train_encoder(
-                                    device=self.compute_device,
-                                    data=buffer_th,
-                                    z_dim=1,
-                                    training_epochs=20,
-                                    exp=self.exp)
+        
+        del samples
+        self.state_encoder = train_encoder(device=self.compute_device,
+                data=buffer_th,
+                z_dim=self.z_dim,
+                training_epochs=50,
+                exp=self.exp,
+                )
         return
 
     @named_output('states actions rewards done policies values')
-    def take_one_step(self, envs, model):
+    def take_one_step(self, envs):
         states = [
             e.last_obs if hasattr(e, 'last_obs') else e.reset()
             for e in envs
@@ -160,12 +217,8 @@ class PPO_AUP(object):
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
         values_q, policies = self.model(tensor_states)
         values = values_q.mean(1)
+        values_q_aup, policies_aup = self.model_aup(tensor_states)
         
-        val_aup = []
-        for model_aup in self.models_aup:
-            values_q_aup, policies_aup = model_aup(tensor_states)
-            val_aup.append(values_q_aup)
-
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         
@@ -182,15 +235,16 @@ class PPO_AUP(object):
 
             if self.impact_training:
                 # calculate AUP penalty
-                penalty = 0.
-                scale = 1.
-                for values_q_aup in val_aup:
-                    noop_value = values_q_aup[i, 0]
-                    max_value = values_q_aup[i, action]
-                    penalty += (max_value - noop_value).abs()
-                lamb = self.lamb_schedule.value(self.num_steps-self.train_aux_steps)
+                noop_value = values_q_aup[i, 0]
+                max_value = values_q_aup[i].max()
+                penalty = (max_value - noop_value).abs()
+                self.scale = noop_value
+                if self.use_scale:
+                    scale = noop_value
+                else:
+                    scale = 1.
+                lamb = self.lamb_schedule.value(self.num_steps-self.train_aup_steps)
                 self.lamb = lamb
-                penalty = penalty / len(val_aup)
                 self.penalty = penalty
                 reward = reward - lamb * (penalty / scale)
                 reward = reward.cpu().tolist()
@@ -201,21 +255,31 @@ class PPO_AUP(object):
         return states, actions, rewards, dones, policies, values
 
     @named_output('states actions rewards done policies values')
-    def take_one_step_rand(self, envs, model_aup):
+    def take_one_step_rand(self, envs):
         states = [
                 e.last_obs if hasattr(e, 'last_obs') else e.reset()
                 for e in envs
                 ]
+        if self.random_proj:
+            rendered_states = [
+                    e.last_rendered_obs if hasattr(e, 'last_rendered_obs') else self.preprocess_state(e, reset=True)
+                    for e in envs
+                    ]
+        else:
+            rendered_states = [
+                    e.last_rendered_obs if hasattr(e, 'last_rendered_obs') else self.preprocess_state(e, reset=True)
+                    for e in envs
+                    ]
+        random_rewards = self.get_rand_rewards(rendered_states)
+        self.rand_rewards = random_rewards  # *shrug* for logging
+        random_rewards = random_rewards.squeeze(-1).tolist() # [batch, actions]
+
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-        values_q, policies = model_aup(tensor_states)
+        values_q, policies = self.model_aup(tensor_states)
         values = values_q.mean(1)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
 
-        random_rewards = self.get_rand_rewards(tensor_states, envs, model_aup)
-        model_aup.last_rr = random_rewards  # *shrug* for logging
-        random_rewards = random_rewards.squeeze(-1)
-        random_rewards = random_rewards.tolist() # [batch, actions]
 
         actions = []
         rewards = []
@@ -226,11 +290,14 @@ class PPO_AUP(object):
             if done:
                 obs = env.reset()
             env.last_obs = obs
+            if self.random_proj:
+                env.last_rendered_obs = self.preprocess_state(env)
+            else:
+                env.last_rendered_obs = self.preprocess_state(env)
             actions.append(action)
             dones.append(done)
 
         rewards = random_rewards
-        # print ('Batch Rewards: ', np.asarray(rewards).mean())
         return states, actions, rewards, dones, policies, values
 
 
@@ -248,8 +315,8 @@ class PPO_AUP(object):
                 env for env, done in zip(test_envs, data.done) if not done
             ]
 
-    @named_output('states actions action_prob returns advantages values')
-    def gen_training_batch(self, steps_per_env, model, update_n=False, flat=True):
+    @named_output('states actions action_prob returns advantages values, values2')
+    def gen_training_batch(self, steps_per_env, flat=True):
         """
         Run each environment a number of steps and calculate advantages.
 
@@ -263,17 +330,28 @@ class PPO_AUP(object):
             Otherwise, shape will be ``(steps_per_env, num_env, ...)``.
         """
         if self.training_aup:
+            model = self.model_aup
             take_one_step = self.take_one_step_rand 
         else:
+            model = self.model
             take_one_step = self.take_one_step
 
-        steps = [take_one_step(self.training_envs, model) for _ in range(steps_per_env)] # [steps]
+        steps = [take_one_step(self.training_envs) for _ in range(steps_per_env)] # [steps]
         final_states = [e.last_obs for e in self.training_envs]
         tensor_states = torch.tensor(
             final_states, device=self.compute_device, dtype=torch.float32)
         final_vals = model(tensor_states)[0]
         final_vals = final_vals.mean(1).detach().cpu().numpy()  # adjust for learning Q function
         values = np.array([s.values for s in steps] + [final_vals])
+
+        with torch.no_grad():
+            if self.value_agent is not None:
+                final_vals2 = self.value_agent.model(tensor_states)[0]
+                final_vals2 = final_vals2.mean(1).detach().cpu().numpy()  
+                values2 = np.array([s.values for s in steps] + [final_vals])
+            else:
+                values2 = torch.zeros(*values.shape)
+
         rewards = np.array([s.rewards for s in steps])
         done = np.array([s.done for s in steps])
         reward_mask = ~done
@@ -301,22 +379,28 @@ class PPO_AUP(object):
                 x = x.reshape(-1, *x.shape[2:])
             return torch.tensor(x, device=self.compute_device, dtype=dtype)
 
-        if update_n:
-            self.num_steps += actions.size
+        self.num_steps += actions.size
         self.num_episodes += np.sum(done)
         return (
-            t([s.states for s in steps]), t(actions, torch.int64),
-            t(probs), t(returns), t(advantages), t(values[:-1])
-        )
+                t([s.states for s in steps]), t(actions, torch.int64),
+                t(probs), t(returns), t(advantages), t(values[:-1]),
+                t(values2[:-1])
+                )
 
     def calculate_loss(
-            self, model, states, actions, old_policy, old_values, returns, advantages):
+            self, states, actions, old_policy, old_values, returns, advantages):
         """
         All parameters ought to be tensors on the appropriate compute device.
         ne_step = s
         """
+        if self.training_aup:
+            model = self.model_aup
+        else:
+            model = self.model
         values, policy = model(states)
         values = values.mean(1)  # adjust for learning Q function
+
+
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)
@@ -330,24 +414,27 @@ class PPO_AUP(object):
 
         entropy = torch.sum(-policy * torch.log(policy + 1e-12), dim=-1)
         entropy_loss = torch.clamp(entropy.mean(), max=self.entropy_clip)
-        if self.training_aup == False:
-            entropy_reg = self.entropy_reg
+        if self.training_aup:
+            entropy_loss *= -self.entropy_aup
         else:
-            entropy_reg = self.entropy_reg_aux
-
-        entropy_loss *= -entropy_reg
+            entropy_loss *= -self.entropy_reg
 
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
-    def train_batch(self, batch, model, optimizer):
+    def train_batch(self, batch):
+        # batch = self.gen_training_batch(self.steps_per_env)
         idx = np.arange(len(batch.states))
 
         for _ in range(self.epochs_per_batch):
             np.random.shuffle(idx)
             for k in idx.reshape(self.num_minibatches, -1):
-                entropy, loss = self.calculate_loss(model,
+                entropy, loss = self.calculate_loss(
                     batch.states[k], batch.actions[k], batch.action_prob[k],
                     batch.values[k], batch.returns[k], batch.advantages[k])
+                if self.training_aup:
+                    optimizer = self.optimizer_aup
+                else:
+                    optimizer = self.optimizer
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -360,85 +447,63 @@ class PPO_AUP(object):
             next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)
             next_report = round_up(self.num_steps, self.report_freq)
             next_test = round_up(self.num_steps, self.test_freq)
-
-            n = self.num_steps
-            if n > self.train_aux_steps and not self.switch_to_ppo:
+            if self.num_steps > (self.train_aup_steps*self.idx) and not self.switch_to_ppo:
                 self.switch_to_ppo = True
                 print ('---------------------------------')
                 print ('Training Impact Aware Agent')
                 self.training_aup = False
-                checkpointing.save_checkpoint(self.logdir, self, [
-                    'model', 'optimizer'])#, 'model_aup', 'optimizer_aup',
-                #])
+                #checkpointing.save_checkpoint(self.logdir, self, [
+                #    'model', 'optimizer', 'model_aup', 'optimizer_aup',
+                #    ])
+
+            batch = self.gen_training_batch(self.steps_per_env)
+            self.train_batch(batch)
+
+            n = self.num_steps
             
-            if self.training_aup == True:
-                for i, (model, optim) in enumerate(zip(self.models_aup, self.optimizers_aup)):
-                    batch = self.gen_training_batch(self.steps_per_env,
-                                                    model=model, update_n=(i==(len(self.models_aup)-1)))
-                    self.train_batch(batch, model, optimizer=optim)
-                    #if not n >= next_report and self.summary_writer is not None:
-                    # print ('writing report')
-                    writer = self.summary_writer
-                    entropy, loss = self.calculate_loss(model, 
-                            batch.states, batch.actions, batch.action_prob,
-                            batch.values, batch.returns, batch.advantages)
-                    loss = loss.item()
-                    entropy = entropy.mean().item()
-                    values = batch.values.mean().item()
-                    advantages = batch.advantages.mean().item()
-                    try:
-                        rrnd = model.last_rr.mean().item()
-                    except: rrnd = 0
 
-
-                    logger.info(
-                            "n=%i: agent=%i, loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
-                            n, i, loss, entropy, values, advantages, rrnd)
-                    writer.add_scalar("training/agent{}/loss".format(i), loss, n)
-                    writer.add_scalar("training/agent{}/entropy".format(i), entropy, n)
-                    writer.add_scalar("training/agent{}/values".format(i), values, n)
-                    writer.add_scalar("training/agent{}/advantages".format(i), advantages, n)
-                    if self.training_aup:
-                        writer.add_scalar("training/agent{}/rand_reward".format(i), rrnd, n)
-                    writer.flush()
-            else:
-                batch = self.gen_training_batch(self.steps_per_env, model=self.model, update_n=True)
-                self.train_batch(batch, model=self.model, optimizer=self.optimizer)
-                # if n >= next_report and self.summary_writer is not None:
+            if n >= next_report and self.summary_writer is not None:
                 writer = self.summary_writer
-                entropy, loss = self.calculate_loss(model, 
-                        batch.states, batch.actions, batch.action_prob,
-                        batch.values, batch.returns, batch.advantages)
+                entropy, loss = self.calculate_loss(
+                    batch.states, batch.actions, batch.action_prob,
+                    batch.values, batch.returns, batch.advantages)
                 loss = loss.item()
                 entropy = entropy.mean().item()
                 values = batch.values.mean().item()
+                values2 = batch.values2.mean().item()
                 advantages = batch.advantages.mean().item()
                 try:
-                    scale = 1.
+                    rrnd = self.rand_rewards.mean().item()
+                except:
+                    rrnd = 0
+                try:
+                    scale = self.scale.mean().item()
                     lamb = self.lamb
                     penalty = self.penalty.item()
                 except:
-                    scale = 1.
+                    scale = 0
                     lamb = 0
                     penalty = 0
                 logger.info(
-                        "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
-                        n, loss, entropy, values, advantages, rrnd)
-                writer.add_scalar("training/loss", loss, n)
-                writer.add_scalar("training/entropy".format(i), entropy, n)
-                writer.add_scalar("training/values".format(i), values, n)
-                writer.add_scalar("training/advantages".format(i), advantages, n)
+                    "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, rrwd=%0.3f",
+                    n, loss, entropy, values, advantages, rrnd)
+                writer.add_scalar("training/{}/loss".format(self.idx), loss, n)
+                writer.add_scalar("training/{}/entropy".format(self.idx), entropy, n)
+                writer.add_scalar("training/{}/values".format(self.idx), values, n)
+                writer.add_scalar("training/{}/values2".format(self.idx), values2, n)
+                writer.add_scalar("training/{}/advantages".format(self.idx), advantages, n)
+                if self.training_aup:
+                    writer.add_scalar("training/{}/rand_reward".format(self.idx), rrnd, n)
                 if not self.training_aup:
-                    writer.add_scalar("training/scale_value", scale, n)
-                    writer.add_scalar("training/lambda", lamb, n)
-                    writer.add_scalar("training/aup_penalty", penalty, n)
+                    writer.add_scalar("training/{}/scale_value".format(self.idx), scale, n)
+                    writer.add_scalar("training/{}/lambda".format(self.idx), lamb, n)
+                    writer.add_scalar("training/{}/aup_penalty".format(self.idx), penalty, n)
                 writer.flush()
-
 
             if n >= next_checkpoint:
                 checkpointing.save_checkpoint(self.logdir, self, [
-                    'model', 'optimizer'])#, 'models_aup', 'optimizers_aup',
-                #])
+                    'model', 'optimizer', 'model_aup', 'optimizer_aup',
+                ])
 
             if n >= next_test:
                 self.run_test_envs()

@@ -3,6 +3,7 @@ import numpy as np
 
 import torch
 import torch.optim as optim
+import torch.nn.functional as F
 import torchvision
 
 from safelife.helper_utils import load_kwargs
@@ -10,12 +11,13 @@ from safelife.render_graphics import render_board
 
 from .utils import named_output, round_up, LinearSchedule
 from . import checkpointing
+from .cb_vae import train_encoder, load_state_encoder, encode_state
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
 
 
-class PPO(object):
+class PPO_AUP(object):
     summary_writer = None
     logdir = None
 
@@ -28,10 +30,8 @@ class PPO(object):
 
     gamma = 0.97
     lmda = 0.95
-    learning_rate = 3e-4
     learning_rate_aup = 3e-4
-    entropy_reg = 0.01 
-    entropy_aup = 0.1
+    entropy_reg_aup = 0.01 
 
     entropy_clip = 1.0  # don't start regularization until it drops below this
     vf_coef = 0.5
@@ -52,28 +52,39 @@ class PPO(object):
 
     training_envs = None
     testing_envs = None
-    
     epsilon = 0.0  # for exploration
 
 
-    def __init__(self, model, **kwargs):
+    def __init__(self, model_aup, model_aux, env_type, z_dim, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
-
-        self.model = model.to(self.compute_device)
-        self.optimizer = optim.Adam(
-            self.model.parameters(), lr=self.learning_rate)
+        
+        self.model_aux = model_aux.model_aux.to(self.compute_device)
+        self.optimizer_aux = model_aux.optimizer_aux
+        self.model_aup = model_aup.to(self.compute_device)
+        self.optimizer_aup = optim.Adam(self.model_aup.parameters(), lr=self.learning_rate_aup)
         checkpointing.load_checkpoint(self.logdir, self)
+        self.exp = env_type
+
+        """ AUP-specific parameters """
+        self.z_dim = z_dim
+        self.use_scale = False
+        self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=1e-1)
+   
+    def tensor(self, data, dtype):
+        data = np.asanyarray(data)
+        return torch.as_tensor(data, device=self.compute_device, dtype=dtype)
 
     @named_output('states actions rewards done policies values')
-    def take_one_step(self, envs):
+    def take_one_step_aup(self, envs):
         states = [
             e.last_obs if hasattr(e, 'last_obs') else e.reset()
             for e in envs
         ]
-        tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-        values_q, policies = self.model(tensor_states)
+        tensor_states = self.tensor(states, dtype=torch.float32)
+        values_q, policies = self.model_aup(tensor_states)
         values = values_q.mean(1)
+        values_q_aux, policies_aux = self.model_aux(tensor_states)
         
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
@@ -81,6 +92,7 @@ class PPO(object):
         actions = []
         rewards = []
         dones = []
+
         for i, (policy, env) in enumerate(zip(policies, envs)):
             action = np.random.choice(len(policy), p=policy) # fine 
             obs, reward, done, info = env.step(action)
@@ -88,6 +100,21 @@ class PPO(object):
                 obs = env.reset()
             env.last_obs = obs
             actions.append(action)
+
+            # calculate AUP penalty
+            inaction_value = values_q_aux[i, 0]
+            action_value = values_q_aux[i, action]
+            penalty = (action_value - inaction_value).abs()
+            self.scale = inaction_value
+            if self.use_scale:
+                scale = inaction_value
+            else:
+                scale = 1.
+            lamb = self.lamb_schedule.value(self.num_steps)
+            self.lamb = lamb
+            self.penalty = penalty
+            reward = reward - lamb * (penalty / scale)
+            reward = reward.cpu().tolist()
             rewards.append(reward)
             dones.append(done)
        
@@ -103,7 +130,7 @@ class PPO(object):
         """
         test_envs = self.testing_envs or []
         while test_envs:
-            data = self.take_one_step(test_envs)
+            data = self.take_one_step_aup(test_envs)
             test_envs = [
                 env for env, done in zip(test_envs, data.done) if not done
             ]
@@ -122,14 +149,10 @@ class PPO(object):
             ``(steps_per_env * num_env, ...)``.
             Otherwise, shape will be ``(steps_per_env, num_env, ...)``.
         """
-        model = self.model
-        take_one_step = self.take_one_step
-
-        steps = [take_one_step(self.training_envs) for _ in range(steps_per_env)] # [steps]
+        steps = [self.take_one_step_aup(self.training_envs) for _ in range(steps_per_env)] # [steps]
         final_states = [e.last_obs for e in self.training_envs]
-        tensor_states = torch.tensor(
-            final_states, device=self.compute_device, dtype=torch.float32)
-        final_vals = model(tensor_states)[0]
+        tensor_states = self.tensor(final_states, dtype=torch.float32)
+        final_vals = self.model_aup(tensor_states)[0]
         final_vals = final_vals.mean(1).detach().cpu().numpy()  # adjust for learning Q function
         values = np.array([s.values for s in steps] + [final_vals])
 
@@ -158,7 +181,7 @@ class PPO(object):
             if flat:
                 x = np.asanyarray(x)
                 x = x.reshape(-1, *x.shape[2:])
-            return torch.tensor(x, device=self.compute_device, dtype=dtype)
+            return self.tensor(x, dtype=dtype)
 
         self.num_steps += actions.size
         self.num_episodes += np.sum(done)
@@ -173,10 +196,8 @@ class PPO(object):
         All parameters ought to be tensors on the appropriate compute device.
         ne_step = s
         """
-        model = self.model
-        values, policy = model(states)
+        values, policy = self.model_aup(states)
         values = values.mean(1)  # adjust for learning Q function
-
 
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
@@ -191,12 +212,11 @@ class PPO(object):
 
         entropy = torch.sum(-policy * torch.log(policy + 1e-12), dim=-1)
         entropy_loss = torch.clamp(entropy.mean(), max=self.entropy_clip)
-        entropy_loss *= -self.entropy_reg
+        entropy_loss *= -self.entropy_reg_aup
 
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
     def train_batch(self, batch):
-        # batch = self.gen_training_batch(self.steps_per_env)
         idx = np.arange(len(batch.states))
 
         for _ in range(self.epochs_per_batch):
@@ -205,10 +225,9 @@ class PPO(object):
                 entropy, loss = self.calculate_loss(
                     batch.states[k], batch.actions[k], batch.action_prob[k],
                     batch.values[k], batch.returns[k], batch.advantages[k])
-                optimizer = self.optimizer
-                optimizer.zero_grad()
+                self.optimizer_aup.zero_grad()
                 loss.backward()
-                optimizer.step()
+                self.optimizer_aup.step()
 
     def train(self, steps):
         print ('starting training')
@@ -218,11 +237,11 @@ class PPO(object):
             next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)
             next_report = round_up(self.num_steps, self.report_freq)
             next_test = round_up(self.num_steps, self.test_freq)
-
             batch = self.gen_training_batch(self.steps_per_env)
             self.train_batch(batch)
 
             n = self.num_steps
+
             if n >= next_report and self.summary_writer is not None:
                 writer = self.summary_writer
                 entropy, loss = self.calculate_loss(
@@ -232,6 +251,9 @@ class PPO(object):
                 entropy = entropy.mean().item()
                 values = batch.values.mean().item()
                 advantages = batch.advantages.mean().item()
+                scale = self.scale.mean().item()
+                lamb = self.lamb
+                penalty = self.penalty.item()
                 logger.info(
                     "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g",
                     n, loss, entropy, values, advantages)
@@ -239,20 +261,21 @@ class PPO(object):
                 writer.add_scalar("training/entropy", entropy, n)
                 writer.add_scalar("training/values", values, n)
                 writer.add_scalar("training/advantages", advantages, n)
+                writer.add_scalar("training/scale_value", scale, n)
+                writer.add_scalar("training/lambda", lamb, n)
+                writer.add_scalar("training/aup_penalty", penalty, n)
                 writer.flush()
 
             if n >= next_checkpoint:
                 checkpointing.save_checkpoint(self.logdir, self, [
-                    'model', 'optimizer',
-                ])
+                    'model_aux', 'optimizer_aux', 'model_aup', 'optimizer_aup',
+                ], 'aup_')
 
             if n >= next_test:
                 self.run_test_envs()
-        for env in self.training_envs:
-            env.global_counter = None
-            env.close()
         
-        for env in self.testing_envs:
-            env.global_counter = None
+        # Closing up
+        for env in self.training_envs:
             env.close()
-
+        for env in self.testing_envs:
+            env.close()

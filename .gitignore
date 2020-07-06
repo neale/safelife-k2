@@ -20,3 +20,12 @@ models/
 training_runs/
 trialthrowaway/
 
+results-10k/
+results-nrfn/
+results/
+results_cache/
+results_ppo/
+aesults_short/
+csv_output/
+level_sets/
+

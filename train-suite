@@ -48,7 +48,8 @@ parser.add_argument('--env-type', choices=env_types)
 parser.add_argument('--algo', default='ppo', choices=('ppo', 'aup', 'aup-p', 'naive'))
 parser.add_argument('--config', default='ppo', choices=('ppo', 'aup', 'aupp', 'naive'))
 parser.add_argument('--z', default=1.0)
-parser.add_argument('--envn', default=1)
+parser.add_argument('--n_envs', default='0')
+parser.add_argument('--batch', default='1')
 parser.add_argument('--run_suite', action='store_true')
 args = parser.parse_args()
 
@@ -113,10 +114,11 @@ try:
     """
 
     run_env_types = [
-            #'append-still-easy',
-            'append-still',
-            'append-spawn',
-            'prune-still']
+            'append-still-easy',
+            #'append-still',
+            #'append-spawn',
+            #'prune-still'
+            ]
 
     n_levels = 8
     batches = 5 
@@ -125,14 +127,23 @@ try:
     else:
         penalty = 0.0
     iters = 3
+    
+    batch_start = 2
+    iter_start = 1
     for run_env_type in run_env_types:
-        for batch in range(1, batches+1):
-            for iter in range(1, iters+1):
-                data_dir = 'results/{}/{}/batch_{}/iter_{}'.format(
+        for batch in range(batch_start, batches+1):
+            for iter in range(iter_start, iters+1):
+                data_dir = 'results-aup-envs/{}/{}/{}/batch_{}/iter_{}'.format(
                         args.algo,
+                        args.n_envs,
                         run_env_type,
                         batch,
                         iter)
+                #data_dir = 'results-continue/{}/{}/batch_{}/iter_{}'.format(
+                #        args.algo,
+                #        run_env_type,
+                #        batch,
+                #        iter)
                 print ('-------------------------------------------')
                 print ('Running {} in {} on dataset {}, iter: {}'.format(
                     args.algo,
@@ -274,16 +285,39 @@ try:
                     else:
                         level_iterator = spawn_loader('append-still', run_env_type)
                 else:
-                    training_levels = './level_sets/{}/{}env/batch{}/'.format(
-                            run_env_type,
-                            n_levels,
-                            batch)
-                    #training_levels = 'random/append-still-easy.yaml'
-                    test_levels = training_levels
-                    level_iterator = SafeLifeLevelIterator(
-                            training_levels,
-                            distinct_levels=n_levels,
-                            total_levels=-1)
+
+                    if args.n_envs == 'inf':
+                        training_levels = 'random/{}.yaml'.format(run_env_type)
+                        test_levels = training_levels
+                        level_iterator = SafeLifeLevelIterator(
+                                training_levels,
+                                total_levels=-1)
+
+                    elif args.n_envs == '32':
+                        training_levels = 'n_levels/32/{}/'.format(run_env_type)
+                        test_levels = training_levels
+                        level_iterator = SafeLifeLevelIterator(
+                                training_levels,
+                                distinct_levels=32,
+                                total_levels=-1)
+
+                    elif args.n_envs == '16':
+                        training_levels = 'n_levels/16/{}/batch{}'.format(run_env_type, args.batch)
+                        test_levels = training_levels
+                        level_iterator = SafeLifeLevelIterator(
+                                training_levels,
+                                distinct_levels=16,
+                                total_levels=-1)
+                    else:
+                        training_levels = './level_sets/{}/{}env/batch{}/'.format(
+                                run_env_type,
+                                n_levels,
+                                batch)
+                        test_levels = training_levels
+                        level_iterator = SafeLifeLevelIterator(
+                                training_levels,
+                                distinct_levels=n_levels,
+                                total_levels=-1)
 
                 summary_writer = SummaryWriter(data_dir)
 
@@ -294,7 +328,7 @@ try:
                         level_iterator=level_iterator,
                         )
                 testing_envs = safelife_env_factory(
-                        logdir=data_dir, summary_writer=summary_writer, num_envs=8, testing=True,
+                        logdir=data_dir, summary_writer=summary_writer, num_envs=16, testing=True,
                         level_iterator=SafeLifeLevelIterator(
                             test_levels, distinct_levels=n_levels, total_levels=-1)
                         )
@@ -320,27 +354,29 @@ try:
                         aup_p = True
                     else:
                         aup_p = False
-
+                    
                     aux_model = PPO_AUX(
                             train_model_aux, run_env_type,
                             training_envs=training_envs,
                             testing_envs=testing_envs,
                             z_dim=int(args.z),
                             buf_size=100e3,
-                            vae_epochs=50,
+                            vae_epochs=100,
                             random_projection=aup_p,
+                            aux_train_steps=aux_train_steps,
                             logdir=data_dir,
                             summary_writer=summary_writer)
-                    aux_model.train(aux_train_steps)   
-
+                    aux_model.train()   
+    
                     aup_model = PPO_AUP(
                             train_model_aup, aux_model, run_env_type,
                             training_envs=training_envs,
                             testing_envs=testing_envs,
                             z_dim=int(args.z),
+                            aup_train_steps=aup_train_steps,
                             logdir=data_dir, 
                             summary_writer=summary_writer)
-                    aup_model.train(aup_train_steps)   
+                    aup_model.train()   
 
                 elif args.algo in ['ppo', 'naive']:
                     from training.models import SafeLifePolicyNetwork

@@ -10,10 +10,14 @@ from safelife.render_graphics import render_board
 
 from .utils import named_output, round_up, LinearSchedule
 from . import checkpointing
-from .aae import *
 from .cb_vae import train_encoder, load_state_encoder, encode_state
 import matplotlib.pyplot as plt
 import os
+
+import matplotlib.lines as lines
+import seaborn as sns
+import pandas as pd
+import matplotlib.patheffects as PathEffects
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
@@ -59,21 +63,20 @@ class PPO_eval(object):
     epsilon = 0.0  # for exploration
 
 
-    def __init__(self, ppo_agent, model, model_aup, env_type, z_dim, agent_index, name, level_idx, **kwargs):
+    def __init__(self, ppo_agent, model, model_aup, env_type, z_dim, name, level_idx, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
 
-        self.model = model.to(self.compute_device)
+        self.model_aux = model.to(self.compute_device)
         self.model_aup = model_aup.to(self.compute_device)
-        self.idx = agent_index
         self.level = level_idx
         self.name = name
-        self.optimizer = optim.Adam(
-            self.model.parameters(), lr=self.learning_rate)
-        self.optimizer_aup = optim.Adam(
-            self.model_aup.parameters(), lr=self.learning_rate_aup)
-        checkpointing.load_checkpoint(self.logdir, self)
-        self.model.eval()
+        self.optimizer_aux = optim.Adam(self.model_aux.parameters(), lr=self.learning_rate)
+        self.optimizer_aup = optim.Adam(self.model_aup.parameters(), lr=self.learning_rate_aup)
+        print (self.logdir)
+        checkpointing.load_checkpoint(self.logdir[:-12], self, aux=True)
+        checkpointing.load_checkpoint(self.logdir[:-12], self, aup=True)
+        self.model_aux.eval()
         self.model_aup.eval()
 
         self.exp = env_type
@@ -82,7 +85,7 @@ class PPO_eval(object):
         self.state_encoder = None
         self.use_scale = False
         self.steps = 0
-        self.user_input = True
+        self.user_input = False
         self.obsp = None
 
     @named_output('states actions rewards done policies values')
@@ -105,19 +108,19 @@ class PPO_eval(object):
         dones = []
         for i, (policy, env) in enumerate(zip(policies, envs)):
             self.obsp = render_board(env.game.board, env.game.goals, env.game.orientation)
-            #if self.steps > 150 and self.user_input==True:
-            #    action = input('action: ')
-            #    if action == 'play':
-            #        self.user_input = False
-            #        action = np.random.choice(len(policy), p=policy) # fine 
-            #    else:
-            #        try:
-            #            action = int(action)
-            #        except:
-            #            print ('Bad action input')
-            #            action = 0
-            #else:
-            #    action = np.random.choice(len(policy), p=policy) # fine 
+            if self.steps > 150 and self.user_input==True:
+                action = input('action: ')
+                if action == 'play':
+                    self.user_input = False
+                    action = np.random.choice(len(policy), p=policy) # fine 
+                else:
+                    try:
+                        action = int(action)
+                    except:
+                        print ('Bad action input')
+                        action = 0
+            else:
+                action = np.random.choice(len(policy), p=policy) # fine 
             action = np.random.choice(len(policy), p=policy) # fine 
             obs, reward, done, info = env.step(action)
             if done:
@@ -139,11 +142,11 @@ class PPO_eval(object):
             #plt.imshow(obsp)
             
             #self.obsp = render_board(env.game.board, env.game.goals, env.game.orientation)
-            plt.imshow(self.obsp)
-            os.makedirs('gifs/trajectories/{}/{}/{}'.format(
-                self.exp, self.name, self.level), exist_ok=True)
-            plt.savefig('gifs/trajectories/{}/{}/{}/{}'.format(
-                self.exp, self.name, self.level, self.steps))
+            #plt.imshow(self.obsp)
+            #os.makedirs('gifs/trajectories/{}/{}/{}'.format(
+            #    self.exp, self.name, self.level), exist_ok=True)
+            #plt.savefig('gifs/trajectories/{}/{}/{}/{}'.format(
+            #    self.exp, self.name, self.level, self.steps))
             #if self.user_input and self.steps > 150:
             #    plt.imshow(self.obsp)
             #    plt.show()
@@ -162,94 +165,86 @@ class PPO_eval(object):
             for e in envs
         ]
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-        values_q, policies = self.model(tensor_states)
-        values = values_q.mean(1)
         values_q_aup, policies_aup = self.model_aup(tensor_states)
+        values = values_q_aup.mean(1)
+        values_q_aux, policies_aux = self.model_aux(tensor_states)
         
         values = values.detach().cpu().numpy()
-        policies = policies.detach().cpu().numpy()
+        policies = policies_aup.detach().cpu().numpy()
         
         actions = []
         rewards = []
         dones = []
-        obsp = None
+        obsp = True
         for i, (policy, env) in enumerate(zip(policies, envs)):
 
-            #if self.steps > 50 and self.user_input==True:
-            #    action = input('action: ')
-            #    if action == 'play':
-            #        self.user_input = False
-            #        action = np.random.choice(len(policy), p=policy) # fine 
-            #    else:
-            #        try:
-            #            action = int(action)
-            #        except:
-            #            print ('Bad action input')
-            #            action = 0
-            #else:
-            #    action = np.random.choice(len(policy), p=policy) # fine 
+            if self.user_input==True:
+                action = input('action: ')
+                if action == 'play':
+                    self.user_input = False
+                    action = np.random.choice(len(policy), p=policy) # fine 
+                else:
+                    try:
+                        action = int(action)
+                    except:
+                        print ('Bad action input')
+                        action = 0
+            else:
+                action = np.random.choice(len(policy), p=policy) # fine 
             #if self.steps > 50 and self.obsp is not None:
-                #plt.imshow(self.obsp)
-
-                #plt.show()
-            #    pass
-            action = np.random.choice(len(policy), p=policy) # fine 
+            #    plt.imshow(self.obsp)
+            #    plt.show()
+            #action = np.random.choice(len(policy), p=policy) # fine 
+            print (action, 'taken')
             obs, reward, done, info = env.step(action)
             if done:
                 obs = env.reset()
             env.last_obs = obs
-            #actions.append(action)
+            actions.append(action)
 
             # calculate AUP penalty
-            #noop_value = values_q_aup[i, 0]
-            #max_value = values_q_aup[i, action]
-            #penalty = (max_value - noop_value).abs()
-            #advantages = values_q_aup[i] - noop_value
-            #self.scale = noop_value
-            #if self.use_scale:
-            #    scale = noop_value
-            #else:
-            #    scale = 1.
-            #lamb = self.lamb_schedule.value(self.num_steps-self.train_aup_steps)
-            #self.lamb = lamb
+            noop_value = values_q_aux[i, 0]
+            max_value = values_q_aux[i, action]
+            penalty = (max_value - noop_value).abs()
+            advantages = values_q_aux[i] - noop_value
+            self.scale = noop_value
             
-            #lamb = 0.1
-            #self.penalty = penalty
-            #reward = reward - lamb * (penalty / scale)
-            #a_names = ['noop', 'up', 'right', 'down', 'left', 'toggle up', 'toggle right', 'toggle down', 'toggle left']
-            #print ('STEP {}'.format(self.steps))
-            #for i, label in enumerate(a_names):
-            #    print (label)
-            #    print ('\t policy: {}'.format(policy[i]))
-            #    print ('\t value_aup: {}'.format(values_q[0][i]))
-            #    print ('\t value_aux: {}'.format(advantages[i]))
-            #    print()
+            if self.use_scale:
+                scale = noop_value
+            else:
+                scale = 1.
+            #lamb = self.lamb_schedule.value(self.num_steps-self.train_aup_steps)
+            lamb = 0.1
+            self.lamb = lamb
+            
+            self.penalty = penalty
+            reward = reward - lamb * (penalty / scale)
+            a_names = ['noop', 'up', 'right', 'down', 'left', 'toggle up', 'toggle right', 'toggle down', 'toggle left']
+            print ('STEP {}'.format(self.steps))
+            for i, label in enumerate(a_names):
+                print (label)
+                print ('\t policy: {}'.format(policy[i]))
+        
 
             self.obsp = render_board(env.game.board, env.game.goals, env.game.orientation)
+            plt.close('all')
             plt.imshow(self.obsp)
-            os.makedirs('gifs/trajectories/{}/{}/{}'.format(
-                self.exp, self.name, self.level), exist_ok=True)
-            plt.savefig('gifs/trajectories/{}/{}/{}/{}'.format(
-                self.exp, self.name, self.level, self.steps))
-            #os.makedirs('biglevel_trial/trajectories_8/manual_level_{}/'.format(self.level), exist_ok=True)
-            #plt.savefig('biglevel_trial/trajectories_8/manual_level_{}/step_{}'.format(self.level, self.steps))
-            #if self.user_input and self.steps > 50:
-            #    plt.imshow(self.obsp)
-            #    plt.show()
-            #reward = reward.cpu().tolist()
+            plt.show()
+            
+            reward = reward.cpu().tolist()
             rewards.append(reward)
             dones.append(done)
             self.steps += 1
-       
+        
         # print (rewards)
         return states, actions, rewards, dones, policies, values
 
     def run_test(self, envs):
         obsp = None
-        path = 'gifs/trajectories/{}/{}/{}'.format(self.exp, self.name, self.level)
-        os.makedirs(path, exist_ok=True)
         self.steps = 0
         self.done = False
+        sns.set()
+        mean_actions = np.zeros(9)
         for env in envs:
             while not self.done:
                 states = [
@@ -257,22 +252,101 @@ class PPO_eval(object):
                         for e in envs
                         ]
                 tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-                values_q, policies = self.model(tensor_states)
+                values_q, policies = self.model_aup(tensor_states)
+                values_aux, policies_aux = self.model_aux(tensor_states)
                 policy = policies.detach().cpu().numpy()[0]
 
                 action = np.random.choice(len(policy), p=policy) # fine 
                 obs, reward, done, info = env.step(action)
+
+                noop_value = values_aux[0][0]
+                max_value = values_aux[0][action]
+                penalty = (max_value - noop_value).abs()
+                advantages = values_aux[0] - noop_value
+                self.scale = noop_value
+                a_names = ['noop', 'up', 'right', 'down', 'left',
+                        'toggle up', 'toggle right', 'toggle down', 'toggle left']
+                print ('STEP {}'.format(self.steps))
+                for i, label in enumerate(a_names):
+                    print (label)
+                    print ('\t policy: {}'.format(policy[i]))
+                    print ('\t value_aux: {}'.format(values_aux[0][i]))
+                    print ('\t advantage_aux: {}'.format(advantages[i]))
+                    print()
+                
+                chosen = action  # The action chosen by AUP
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 20))
+                vmax, vmin = .02, -.02
+
+                actions = [r'$\uparrow$', r'$\rightarrow$', r'$\downarrow$', r'$\leftarrow$',
+                        r'$cu$', r'$cr$', r'$cd$', r'$cl$']
+                l_q = advantages[1:].cpu().numpy()
+                means = np.array([0., 2.21406718, 2.21948796, -0.40617021,  0.66383862,  4.50202886, 0.84547208, 1.26441046,  2.4654113 ])
+                l_q -= means[1:]
+
+                mean_actions += advantages.cpu().numpy()
+                # l_q -= l_q_mean
+                
+
+                vmax, vmin = .02, -.02  # Color max/min values
+                data = pd.DataFrame(enumerate(l_q), columns=["x", "y"])  # load list of Q-values
+                v = data.y.values
+                print (data.y.values, data.x.values)
+
+                cmap = sns.diverging_palette(10, 133, s=50, as_cmap=True)  # get red-white-green colormap
+                colors = cmap((v - vmin) / (vmax - vmin))  # normalize bounds
+
+                ax1 = sns.barplot("x", y="y", data=data, palette=colors, ax=ax1)
+                ax1.get_xaxis().tick_bottom()
+                ax1.axes.get_yaxis().set_visible(False)
+                ax1.axes.get_xaxis().set_visible(False)
+                ax1.set_facecolor("white")
+
+                xmin, xmax = ax1.get_xaxis().get_view_interval()
+                ax1.add_artist(lines.Line2D((xmin, xmax), (0, 0), color='black', linewidth=2))  # set baseline for no-op
+
+                size = 29
+                voffset = .05 * vmax
+                for i in range(len(actions)):
+                    txt = ax1.text(i - .01, voffset, actions[i], horizontalalignment='center', fontsize=size)
+                    txt.set_path_effects([PathEffects.withStroke(linewidth=4, foreground='w')])
+                """
+                l_aup = (values_q[0] - values_q[0][0])[1:].cpu().numpy()
+                vmax, vmin = .02, -.02  # Color max/min values
+                data = pd.DataFrame(enumerate(l_aup), columns=["x", "y"])  # load list of Q-values
+                v = data.y.values
+                cmap = sns.diverging_palette(10, 133, s=50, as_cmap=True)  # get red-white-green colormap
+                colors = cmap((v - vmin) / (vmax - vmin))  # normalize bounds
+                
+                ax3 = sns.barplot("x", y="y", data=data, palette=colors, ax=ax3)
+                ax3.get_xaxis().tick_bottom()
+                ax3.axes.get_yaxis().set_visible(False)
+                ax3.axes.get_xaxis().set_visible(False)
+                ax3.set_facecolor("white")
+                xmin, xmax = ax3.get_xaxis().get_view_interval()
+                ax3.add_artist(lines.Line2D((xmin, xmax), (0, 0), color='black', linewidth=2))  # set baseline for no-op
+                size = 29
+                voffset = .05 * vmax
+                for i in range(len(actions)):
+                    txt = ax3.text(i - .01, voffset, actions[i], horizontalalignment='center', fontsize=size)
+                    txt.set_path_effects([PathEffects.withStroke(linewidth=4, foreground='w')])
+                """
+                self.obsp = render_board(env.game.board, env.game.goals, env.game.orientation)
+                ax2.imshow(self.obsp)
+                ax2.grid(False)
+                #plt.show()
+                os.makedirs('mp4_results/', exist_ok=True)
+                plt.savefig('mp4_results/step_{}.png'.format(self.steps))
+                plt.close('all')
+                
                 if done:
                     obs = env.reset()
                 env.last_obs = obs
-                self.obsp = render_board(env.game.board, env.game.goals, env.game.orientation)
-                plt.imshow(self.obsp)
-                plt.savefig('{}/{}'.format(path, self.steps))
                 self.steps += 1
                 print ('steps: ', self.steps)
                 if done:
+                    print (mean_actions / self.steps)
                     return
-                plt.close('all')
 
 
     def test(self):

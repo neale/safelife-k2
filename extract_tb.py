@@ -62,7 +62,7 @@ def mkdir_p(directory):
 
 
 def main():
-    logdir = './append-spawn/events'
+    logdir = './results/'
     output_dir = './csv_output'
     
     run_names_level = glob.glob('{}/*.neale-in-diz-nvm'.format(logdir))
@@ -74,7 +74,8 @@ def main():
                  'episodes/training/reward',
                  'episodes/training/length',
                  'episodes/training/performance',
-                 'training/1/aup_penalty',
+                 'training/aux_reward',
+                 'training/aup_penalty',
                  )
 
     

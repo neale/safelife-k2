@@ -63,6 +63,7 @@ class PPO_AUX(object):
             buf_size,
             vae_epochs,
             random_projection,
+            aux_train_steps,
             **kwargs):
 
         load_kwargs(self, kwargs)
@@ -70,7 +71,15 @@ class PPO_AUX(object):
 
         self.model_aux = model_aux.to(self.compute_device)
         self.optimizer_aux = optim.Adam(self.model_aux.parameters(), lr=self.learning_rate_aux)
-        checkpointing.load_checkpoint(self.logdir, self)
+        self.aux_train_steps = aux_train_steps
+        checkpointing.load_checkpoint(self.logdir, self, aux=True)
+        if self.num_steps >= aux_train_steps-1: # tried to load an intermediate aux function. 
+            skip_vae_training = True
+            print ('loaded to {} steps'.format(self.num_steps))
+        else:
+            skip_vae_training = False
+            print ('loaded to {} steps'.format(self.num_steps))
+
         self.exp = env_type
         
         self.z_dim = z_dim
@@ -80,7 +89,7 @@ class PPO_AUX(object):
         self.random_buffer_size = buf_size
         self.train_encoder_epochs = vae_epochs
 
-        if not self.is_random_projection:
+        if not self.is_random_projection and not skip_vae_training:
             self.load_state_encoder = False
             self.state_encoder_path = 'models/{}/model_save_epoch_100.pt'.format(env_type)
             self.train_state_encoder(envs=self.training_envs)
@@ -242,15 +251,17 @@ class PPO_AUX(object):
         dones = []
         for i, (policy, env) in enumerate(zip(policies, envs)):
             action = np.random.choice(len(policy), p=policy) # fine 
-            obs, _, done, info = env.step(action)
+            obs, reward, done, info = env.step(action)
             if done:
                 obs = env.reset()
             env.last_obs = obs
             env.last_rendered_obs = self.preprocess_state(env)
             actions.append(action)
             dones.append(done)
+            rewards.append(reward)
 
         rewards = aux_rewards
+        # self.aux_rewards = torch.tensor(rewards)
         return states, actions, rewards, dones, policies, values
 
 
@@ -362,10 +373,9 @@ class PPO_AUX(object):
                 loss.backward()
                 self.optimizer_aux.step()
 
-    def train(self, steps):
+    def train(self):
         print ('starting training')
-        max_steps = self.num_steps + steps
-        
+        max_steps = self.aux_train_steps
         while self.num_steps < max_steps:
             next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)
             next_report = round_up(self.num_steps, self.report_freq)

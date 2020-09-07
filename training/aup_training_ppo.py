@@ -55,7 +55,13 @@ class PPO_AUP(object):
     epsilon = 0.0  # for exploration
 
 
-    def __init__(self, model_aup, model_aux, env_type, z_dim, **kwargs):
+    def __init__(self,
+            model_aup,
+            model_aux,
+            env_type,
+            z_dim,
+            aup_train_steps,
+            **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
         
@@ -63,13 +69,14 @@ class PPO_AUP(object):
         self.optimizer_aux = model_aux.optimizer_aux
         self.model_aup = model_aup.to(self.compute_device)
         self.optimizer_aup = optim.Adam(self.model_aup.parameters(), lr=self.learning_rate_aup)
-        checkpointing.load_checkpoint(self.logdir, self)
+        checkpointing.load_checkpoint(self.logdir, self, aup=True)
         self.exp = env_type
+        self.aup_train_steps = aup_train_steps
 
         """ AUP-specific parameters """
         self.z_dim = z_dim
         self.use_scale = False
-        self.lamb_schedule = LinearSchedule(4e6, initial_p=1e-3, final_p=1e-1)
+        self.lamb_schedule = LinearSchedule(aup_train_steps, initial_p=1e-3, final_p=1e-1)
    
     def tensor(self, data, dtype):
         data = np.asanyarray(data)
@@ -229,9 +236,9 @@ class PPO_AUP(object):
                 loss.backward()
                 self.optimizer_aup.step()
 
-    def train(self, steps):
+    def train(self):
         print ('starting training')
-        max_steps = self.num_steps + steps
+        max_steps = self.aup_train_steps
         
         while self.num_steps < max_steps:
             next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)

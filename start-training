@@ -263,8 +263,7 @@ try:
             training_levels = '8env_append-still-hard'
             nlevels = 8
             if args.algo == 'ppo-eval':
-                training_levels = '8env_append-still-hard/8env_append-still-hard-{}.npz'.format(
-                        args.envn)
+                training_levels = 'level_sets/append-still/8env/batch1/batch1-1.npz'
                 nlevels = 1
 
             test_levels = training_levels
@@ -277,8 +276,7 @@ try:
             training_levels = 'level_sets/append-still-easy/8env/batch1/'
             nlevels = 8
             if args.algo == 'ppo-eval':
-                training_levels = '8env_append-still-easy/8env_append-stll-easy-{}.npz'.format(
-                        args.envn)
+                training_levels = 'level_sets/append-still-easy/8env/batch1/batch1-3.npz'
                 nlevels = 1
             test_levels = training_levels
             level_iterator = SafeLifeLevelIterator(training_levels,
@@ -336,7 +334,7 @@ try:
         summary_writer = SummaryWriter(subdir)
 
         training_envs = safelife_env_factory(
-            logdir=subdir, summary_writer=summary_writer, num_envs=16,
+            logdir=subdir, summary_writer=summary_writer, num_envs=1,
             impact_penalty=linear_schedule(t_penalty, [0, penalty]),
             min_performance=linear_schedule(t_performance, [0.01, 0.3]),
             #min_performance=linear_schedule(t_performance, [0.3, 0.3]),
@@ -348,17 +346,7 @@ try:
                 test_levels, distinct_levels=8, total_levels=-1)
         )
 
-        if args.algo == 'ppo-tf':
-            import tensorflow as tf
-            from training.tf_safelife_ppo import SafeLifePPO
-            tf.reset_default_graph()
-
-            algo = SafeLifePPO(
-                envs=training_envs,
-                logdir=subdir, summary_writer=summary_writer)
-            algo.train(6e6)
-
-        elif args.algo == 'ensemble':
+        if args.algo == 'ensemble':
             from training.models import SafeLifePolicyNetwork
             from training.ppo_ensemble import PPO_AUP
             n_rfns = 2
@@ -442,7 +430,6 @@ try:
                     z_dim=1,
                     name=args.config,
                     level_idx=args.envn,
-                    agent_index=1,
                     logdir=subdir, summary_writer=summary_writer)
             algo.test()
 

@@ -31,7 +31,9 @@ level_sets/
 
 
 start-training-original
+start-training_original
 start-training
+random_reward_0.png
 
 results/
 results-10k/

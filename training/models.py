@@ -170,8 +170,15 @@ class SafeLifePolicyNetwork(nn.Module):
         self.value_func = nn.Linear(512, num_actions)
         self.random_fn = None
     
-    def register_rfn(self, dim, device):
-        rfn = torch.ones(dim).to(device)
+    def register_reward_function(self, dim, projection, device):
+        if projection:
+            rfn = torch.ones(1, 90, 90).uniform_(0, 1).to(device)
+            rfn = rfn.unsqueeze(0).repeat(16, 1, 1, 1)
+        else:
+            rfn = torch.ones(dim).to(device)
+            if dim > 1:
+                rfn = rfn.uniform_(0, 1).cuda()
+            rfn = rfn.unsqueeze(0)
         self.random_fn = rfn
 
     def forward(self, obs):

@@ -182,7 +182,12 @@ subprocess.run([
 
 if args.port:
     tb_proc = subprocess.Popen([
-        "tensorboard", "--logdir", job_name + ':' + data_dir, '--port', str(args.port)])
+        "python3",
+        "-m",
+        "tensorboard.main",
+        "--logdir",
+        job_name + ':' + data_dir,
+        '--port', str(args.port)])
 
 
 # Start training!
@@ -452,14 +457,21 @@ try:
             from training.dqn import DQN
 
             obs_shape = training_envs[0].observation_space.shape
-            train_model = SafeLifeQNetwork(obs_shape)
-            target_model = SafeLifeQNetwork(obs_shape)
+            train_model_aux = SafeLifeQNetwork(obs_shape)
+            target_model_aux = SafeLifeQNetwork(obs_shape)
+            train_model_aup = SafeLifeQNetwork(obs_shape)
+            target_model_aup = SafeLifeQNetwork(obs_shape)
+
             algo = DQN(
-                train_model, target_model,
+                train_model_aux, target_model_aux,
+                train_model_aup, target_model_aup,
+                env_type=env_type,
+                z_dim=1,
+                rand_proj=True,
                 training_envs=training_envs,
                 testing_envs=testing_envs,
                 logdir=subdir, summary_writer=summary_writer)
-            algo.train(6e6)
+            algo.train(2e6)
 
                                   
 except Exception:

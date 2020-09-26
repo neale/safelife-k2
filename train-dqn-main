@@ -45,8 +45,8 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', default='ppo', choices=('ppo', 'aup', 'aup-p', 'naive'))
-parser.add_argument('--config', default='ppo', choices=('ppo', 'aup', 'aupp', 'naive'))
+parser.add_argument('--algo', default='ppo', choices=('ppo', 'aup', 'aup-p', 'naive', 'dqn'))
+parser.add_argument('--config', default='ppo', choices=('ppo', 'aup', 'aupp', 'naive', 'dqn'))
 parser.add_argument('--z', default=1.0)
 parser.add_argument('--n_envs', default='8')
 parser.add_argument('--batch', default='1')
@@ -80,7 +80,7 @@ def spawn_loader_aup(child, parent, n_levels):
     from safelife.safelife_env import SafeLifeEnv
 
     loader1 = SafeLifeLevelIterator('safelife/levels/random/{}-easy'.format(child))
-    loader2 = SafeLifeLevelIterator(parent, distinct_levels=n_levels, total_levels=-1)
+    loader2 = SafeLifeLevelIterator(parent, distinct_levels=n_levels, total_levels=0)
 
     trand = 0
     tstill = 1.0e6
@@ -113,32 +113,26 @@ try:
         n_levels (int): the number of discrete levels in each batch
     """
 
-    run_env_types = [
-            'append-still-easy',
-            #'append-still',
-            #'append-spawn',
-            #'prune-still'
-            ]
+    if args.env_type is not None:
+        run_env_types = [args.env_type]
+    else:
+        run_env_types = [
+                'append-still-easy',
+                'append-still',
+                'append-spawn',
+                 'prune-still'
+                ]
 
     n_levels = 8
-    batches = 5
-    if args.algo == 'naive':
-        penalty = 1.0
-    else:
-        penalty = 0.0
-    iters = 3
+    batches = 3
+    penalty = 0.0
+    iters = 5
     batch_start = 1
     iters_start = 1
     for run_env_type in run_env_types:
         for batch in range(batch_start, batches+1):
             for iter in range(iters_start, iters+1):
-                #data_dir = 'results/{}/{}/batch_{}/iter_{}'.format(
-                #        args.algo,
-                #        run_env_type,
-                #        batch,
-                #        iter)
-                data_dir = 'results-dqn-main/{}/{}/batch_{}/iter_{}'.format(
-                        args.n_envs,
+                data_dir = 'results-dqn-mainset/{}/batch_{}/iter_{}'.format(
                         run_env_type,
                         batch,
                         iter)
@@ -285,42 +279,15 @@ try:
                     else:
                         level_iterator = spawn_loader('append-still', run_env_type)
                 else:
-                    if args.n_envs == 'inf':
-                        print ('Running on randomly generated levels')
-                        training_levels = 'random/append-still-easy.yaml'
-                        test_levels = training_levels
-                        level_iterator = SafeLifeLevelIterator(
-                                training_levels,
-                                total_levels=-1)
-                    
-                    
-                    elif args.n_envs == '32':
-                        training_levels = './32env_{}{}/'.format(run_env_type, args.batch)
-                        test_levels = training_levels
-                        level_iterator = SafeLifeLevelIterator(
-                                training_levels,
-                                distinct_levels=32,
-                                total_levels=-1)
-                    
-                    elif args.n_envs == '16':
-                        training_levels = './16env_{}{}/'.format(run_env_type, args.batch)
-                        test_levels = training_levels
-                        level_iterator = SafeLifeLevelIterator(
-                                training_levels,
-                                distinct_levels=16,
-                                total_levels=-1)
-                    
-                    else:
-                        training_levels = './level_sets/{}/{}env/batch{}/'.format(
-                                run_env_type,
-                                n_levels,
-                                batch)
-                        #training_levels = 'random/append-still-easy.yaml'
-                        test_levels = training_levels
-                        level_iterator = SafeLifeLevelIterator(
-                                training_levels,
-                                distinct_levels=n_levels,
-                                total_levels=-1)
+                    training_levels = './level_sets/{}/{}env/batch{}/'.format(
+                            run_env_type,
+                            n_levels,
+                            batch)
+                    test_levels = training_levels
+                    level_iterator = SafeLifeLevelIterator(
+                            training_levels,
+                            distinct_levels=n_levels,
+                            total_levels=-1)
 
                 summary_writer = SummaryWriter(data_dir)
 
@@ -336,84 +303,26 @@ try:
                             test_levels, distinct_levels=n_levels, total_levels=-1)
                         )
 
-                aux_train_steps = 1e6
                 if run_env_type == 'append-still':
-                    aup_train_steps = 5e6
-                    ppo_train_steps = 6e6
-                    dqn_train_steps = 15e3
+                    dqn_train_steps = 15e6
                 else:
-                    aup_train_steps = 4e6
-                    ppo_train_steps = 5e6
-                    dqn_train_steps = 15e3
+                    dqn_train_steps = 15e6
 
-                if args.algo in ['aup', 'aup-p']:
-                    from training.models import SafeLifePolicyNetwork
-                    from training.aux_training_ppo import PPO_AUX
-                    from training.aup_training_ppo import PPO_AUP
+                from training.models import SafeLifeQNetwork
+                from training.dqn import DQN
 
-                    obs_shape = training_envs[0].observation_space.shape
-                    train_model_aux = SafeLifePolicyNetwork(obs_shape)
-                    train_model_aup = SafeLifePolicyNetwork(obs_shape)
-                        
-                    if args.algo == 'aup-p':
-                        aup_p = True
-                    else:
-                        aup_p = False
-
-                    aux_model = PPO_AUX(
-                            train_model_aux, run_env_type,
-                            training_envs=training_envs,
-                            testing_envs=testing_envs,
-                            z_dim=int(args.z),
-                            n_rfn=1,
-                            buf_size=100e3,
-                            vae_epochs=50,
-                            random_projection=aup_p,
-                            logdir=data_dir,
-                            summary_writer=summary_writer)
-                    aux_model.train(aux_train_steps)   
-
-                    aup_model = PPO_AUP(
-                            train_model_aup, aux_model, run_env_type,
-                            training_envs=training_envs,
-                            testing_envs=testing_envs,
-                            z_dim=int(args.z),
-                            logdir=data_dir, 
-                            summary_writer=summary_writer)
-                    aup_model.train(aup_train_steps)   
-
-                elif args.algo in ['ppo', 'naive']:
-                    from training.models import SafeLifePolicyNetwork
-                    from training.ppo import PPO
-
-                    obs_shape = training_envs[0].observation_space.shape
-                    model = SafeLifePolicyNetwork(obs_shape)
-
-                    algo = PPO(
-                            model,
-                            training_envs=training_envs,
-                            testing_envs=testing_envs,
-                            logdir=data_dir,
-                            summary_writer=summary_writer)
-                    algo.train(ppo_train_steps)
-
-                elif args.algo == 'dqn':
-                    from training.models import SafeLifeQNetwork
-                    from training.dqn import DQN
-
-                    obs_shape = training_envs[0].observation_space.shape
-                    train_model = SafeLifeQNetwork(obs_shape)
-                    target_model = SafeLifeQNetwork(obs_shape)
-                    algo = DQN(
-                        train_model, target_model,
-                        training_envs=training_envs,
-                        testing_envs=testing_envs,
-                        logdir=subdir, summary_writer=summary_writer)
-                    algo.train(dqn_train_steps)
+                obs_shape = training_envs[0].observation_space.shape
+                train_model = SafeLifeQNetwork(obs_shape)
+                target_model = SafeLifeQNetwork(obs_shape)
+                algo = DQN(
+                    train_model, target_model,
+                    training_envs=training_envs,
+                    testing_envs=None,
+                    logdir=data_dir,
+                    summary_writer=summary_writer)
+                algo.train(dqn_train_steps)
  
 
-
-                                      
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

@@ -28,6 +28,30 @@ def get_all_checkpoints(logdir):
     files = [f for f in files if step_from_checkpoint(f) >= 0]
     return sorted(files, key=step_from_checkpoint)
 
+def get_all_checkpoints_aux(logdir):
+    files = glob.glob(os.path.join(logdir, 'aux_checkpoint-*.data'))
+
+    def step_from_checkpoint(f):
+        try:
+            return int(f.split('-')[-1][:-5])
+        except ValueError:
+            return -1
+
+    files = [f for f in files if step_from_checkpoint(f) >= 0]
+    return sorted(files, key=step_from_checkpoint)
+
+def get_all_checkpoints_aup(logdir):
+    files = glob.glob(os.path.join(logdir, 'aup_checkpoint-*.data'))
+
+    def step_from_checkpoint(f):
+        try:
+            return int(f.split('-')[-1][:-5])
+        except ValueError:
+            return -1
+
+    files = [f for f in files if step_from_checkpoint(f) >= 0]
+    return sorted(files, key=step_from_checkpoint)
+
 
 def save_checkpoint(path, obj, attribs, prefix='', max_checkpoints=3):
     num_steps = SafeLifeEnv.global_counter.num_steps
@@ -53,9 +77,15 @@ def save_checkpoint(path, obj, attribs, prefix='', max_checkpoints=3):
         os.remove(old_checkpoint)
 
 
-def load_checkpoint(path, obj):
+def load_checkpoint(path, obj, aup=False, aux=False):
     if os.path.isdir(path):
-        checkpoints = get_all_checkpoints(path)
+        if aux is True:
+            checkpoints = get_all_checkpoints_aux(path)
+        if aup is True:
+            checkpoints = get_all_checkpoints_aup(path)
+        if aux is False and aup is False:
+            checkpoints = get_all_checkpoints(path)
+
         path = checkpoints and checkpoints[-1]
     if not path or not os.path.exists(path):
         return

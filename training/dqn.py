@@ -2,17 +2,11 @@ import numpy as np
 
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
-import torchvision
-import matplotlib.pyplot as plt
 
 from safelife.helper_utils import load_kwargs
-from safelife.render_graphics import render_board
 
 from . import checkpointing
-from .utils import round_up, LinearSchedule
-
-from .cb_vae import train_encoder, load_state_encoder, encode_state
+from .utils import round_up
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -47,15 +41,14 @@ class DQN(object):
     gamma = 0.97
     training_batch_size = 64
     optimize_freq = 16
-    learning_rate_aux = 3e-4
-    learning_rate_aup = 3e-4
+    learning_rate = 3e-4
 
     replay_initial = 40000
     replay_size = 100000
     target_update_freq = 10000
 
     checkpoint_freq = 100000
-    num_checkpoints = 3
+    num_checkpoints = 5
     report_freq = 256
     test_freq = 100000
 
@@ -66,39 +59,18 @@ class DQN(object):
 
     epsilon = 0.0  # for exploration
 
-    def __init__(self, training_model_aux, target_model_aux,
-                 training_model_aup, target_model_aup, env_type, z_dim, **kwargs):
+    def __init__(self, training_model, target_model, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
 
-        self.training_model_aup = training_model_aup.to(self.compute_device)
-        self.target_model_aup = target_model_aup.to(self.compute_device)
-        self.training_model_aux = training_model_aux.to(self.compute_device)
-        self.target_model_aux = target_model_aux.to(self.compute_device)
-        self.optimizer_aup = optim.Adam(
-                self.training_model_aup.parameters(), lr=self.learning_rate_aup)
-        self.optimizer_aux = optim.Adam(
-                self.training_model_aux.parameters(), lr=self.learning_rate_aux)
-        self.replay_buffer_aux = ReplayBuffer(self.replay_size)
-        self.replay_buffer_aup = ReplayBuffer(self.replay_size)
+        self.training_model = training_model.to(self.compute_device)
+        self.target_model = target_model.to(self.compute_device)
+        self.optimizer = optim.Adam(
+            self.training_model.parameters(), lr=self.learning_rate)
+        self.replay_buffer = ReplayBuffer(self.replay_size)
 
         checkpointing.load_checkpoint(self.logdir, self)
-
-        self.z_dim = z_dim
-        self.exp = env_type
-        self.state_encoder = None
-        self.training_aux = True
-        self.switch = False
-
-        self.train_aux_steps = 150e3
-        self.buffer_size = 50e3
-        self.train_encoder_epochs = 50
-        self.lamb_schedule = LinearSchedule(1.985e6, initial_p=0.015, final_p=0.015)
-        if self.training_aux:
-            self.load_state_encoder = False
-            self.state_encoder_path = 'models/test/model_save_epoch_50.pt'
-            self.train_state_encoder(envs=self.training_envs)
-            self.register_random_reward_functions()
+        print ('loaded to {} steps'.format(self.num_steps))
 
     @property
     def epsilon_old(self):
@@ -110,87 +82,18 @@ class DQN(object):
         t = (self.num_steps - t1) / (t2 - t1)
         return y1 + (y2-y1) * np.clip(t, 0, 1)
 
-    def register_random_reward_functions(self):
-        n_rfns = 1
-        self.random_fns = []
-        for i in range(n_rfns):
-            rfn = torch.ones(self.z_dim).to(self.compute_device)
-            self.random_fns.append(rfn)
-        self.random_fns = torch.stack(self.random_fns)
-        print ('Registered random reward functions')
-
-    def get_random_rewards(self, states):
-        states = torch.stack(states)
-        self.state_encoder.eval()
-        states_z = encode_state(self.state_encoder, states, self.compute_device)
-        rewards = torch.mm(states_z, self.random_fns.T)
-        return rewards
-
-    def preprocess_state(self, env, reset=False, return_original=False):
-        if reset:
-            _ = env.reset()
-        obs = render_board(env.game.board, env.game.goals, env.game.orientation)
-        obs = np.asarray(obs)
-        obsp = torch.from_numpy(np.matmul(obs[:, :, :3], [0.299, 0.587, 0.114]))
-        obsp = obsp.unsqueeze(0) # [1, batch, H, W]
-        if obsp.size(-1) == 210: # test env
-            obsp = F.avg_pool2d(obsp, 2, 2)/255.
-        else: # big env
-            obsp = F.avg_pool2d(obsp, 5, 4)/255.
-        if return_original:
-            ret = (obsp.float(), obs)
-        else:
-            ret = obsp.float()
-        return ret
-
-
-    def train_state_encoder(self, envs):
-        if self.load_state_encoder:
-            self.state_encoder = load_state_encoder(z_dim=self.z_dim,
-                    input_dim=105,
-                    path=self.state_encoder_path,
-                    device=self.compute_device)
-            return
-        envs = [e.unwrapped for e in envs]
-        states = [
-            e.last_obs if hasattr(e, 'last_obs') else e.reset() for e in envs
-        ]
-        print ('gathering data from envs N = {}'.format(len(envs)))
-        buffer = []
-        buffer_size = int(self.buffer_size // len(envs))
-        for env in envs:
-            for _ in range(buffer_size):
-                action = np.random.choice(env.action_space.n, 1)[0]
-                obs, _, done, _ = env.step(action)
-                if done:
-                    obs = env.reset()
-                obs = self.preprocess_state(env, return_original=False)
-                buffer.append(obs)
-        print ('collected training data for state encoder')
-        buffer_th = torch.stack(buffer)
-        buffer_np = buffer_th.cpu().numpy()
-        np.save('buffers/{}/state_buffer'.format(self.exp), buffer_np)
-        self.state_encoder = train_encoder(device=self.compute_device,
-                data=buffer_th,
-                z_dim=self.z_dim,
-                training_epochs=self.train_encoder_epochs,
-                exp=self.exp,
-                )
-
-
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
 
     def run_test_envs(self):
         # Just run one episode of each test environment.
         # Assumes that the environments themselves handle logging.
-        model = self.training_model_aux if self.training_aux else self.training_model_aup
         for env in self.testing_envs:
             state = env.reset()
             done = False
             while not done:
                 state = torch.tensor([state], device=self.compute_device, dtype=torch.float32)
-                qvals = model(state).detach().cpu().numpy().ravel()
+                qvals = self.training_model(state).detach().cpu().numpy().ravel()
                 state, reward, done, info = env.step(np.argmax(qvals))
 
     def collect_data(self):
@@ -198,74 +101,31 @@ class DQN(object):
             e.last_state if hasattr(e, 'last_state') else e.reset()
             for e in self.training_envs
         ]
-        if self.training_aux:
-            rstates = [
-                e.last_rstate if hasattr(e, 'last_rstate') else self.preprocess_state(e, reset=True)
-                for e in self.training_envs
-            ]
-            rreward = self.get_random_rewards(rstates)
-            rreward = rreward.squeeze(-1).tolist()
-        else:
-            rstates = None
-
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
-        # get aux values and actions no matter what
-        qvals_aux = self.training_model_aux(tensor_states).detach().cpu().numpy()
-        actions_aux = np.argmax(qvals_aux, axis=-1)
-        # get aup actions and values if needed
-        if not self.training_aux:
-            qvals_aup = self.training_model_aup(tensor_states).detach().cpu().numpy()
-            actions_aup = np.argmax(qvals_aup, axis=-1)
+        qvals = self.training_model(tensor_states).detach().cpu().numpy()
 
-        num_states, num_actions = qvals_aux.shape
-
+        num_states, num_actions = qvals.shape
+        actions = np.argmax(qvals, axis=-1)
         random_actions = np.random.randint(num_actions, size=num_states)
         use_random = np.random.random(num_states) < self.epsilon
-        actions = actions_aux if self.training_aux else actions_aup
         actions = np.choose(use_random, [actions, random_actions])
 
-        self.penalty = []
-        action_actor = None
-        for i, (env, state, action) in enumerate(zip(self.training_envs, states, actions)):
-            action_actor = action
-            if not self.training_aux: # if we're training aup, then we want to preserve ordering of actions
-                if qvals_aup.shape[1] < 9:
-                    action_actor = action + 1
-            next_state, reward, done, info = env.step(action_actor)
-
-            if not self.training_aux:
-                noop_value = qvals_aux[:, 0]
-                max_value = qvals_aux[:, action_actor]
-                penalty = np.abs(max_value - noop_value)
-                lamb = self.lamb_schedule.value(self.num_steps-self.train_aux_steps)
-                reward = reward - lamb * penalty[i]
-                self.penalty.append(penalty)
-            else:
-                reward = rreward[i]
-                env.last_rstate = self.preprocess_state(env)
-
+        for env, state, action in zip(self.training_envs, states, actions):
+            next_state, reward, done, info = env.step(action)
             if done:
                 next_state = env.reset()
                 self.num_episodes += 1
             env.last_state = next_state
-            replay_buffer = self.replay_buffer_aux if self.training_aux else self.replay_buffer_aup
-            replay_buffer.push(state, action, reward, next_state, done)
-
-        if self.training_aux:
-            self.aux_reward = torch.tensor(rreward)
+            self.replay_buffer.push(state, action, reward, next_state, done)
 
         self.num_steps += len(states)
 
     def optimize(self, report=False):
-        replay_buffer = self.replay_buffer_aux if self.training_aux else self.replay_buffer_aup
-        model = self.training_model_aux if self.training_aux else self.training_model_aup
-        target_model = self.target_model_aux if self.training_aux else self.target_model_aup
-        optimizer = self.optimizer_aux if self.training_aux else self.optimizer_aup
-        if len(replay_buffer) < self.replay_initial:
+        if len(self.replay_buffer) < self.replay_initial:
             return
 
         state, action, reward, next_state, done = \
-            replay_buffer.sample(self.training_batch_size)
+            self.replay_buffer.sample(self.training_batch_size)
 
         state = torch.tensor(state, device=self.compute_device, dtype=torch.float32)
         next_state = torch.tensor(next_state, device=self.compute_device, dtype=torch.float32)
@@ -273,22 +133,18 @@ class DQN(object):
         reward = torch.tensor(reward, device=self.compute_device, dtype=torch.float32)
         done = torch.tensor(done, device=self.compute_device, dtype=torch.float32)
 
-        q_values = model(state)
-        next_q_values = target_model(next_state).detach()
+        q_values = self.training_model(state)
+        next_q_values = self.target_model(next_state).detach()
 
         q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
         next_q_value, next_action = next_q_values.max(1)
         expected_q_value = reward + self.gamma * next_q_value * (1 - done)
 
-        #if not self.training_aux:
-        #    print (q_value.shape, expected_q_value.shape)
         loss = torch.mean((q_value - expected_q_value)**2)
-        #if not self.training_aux:
-        #    print (loss.shape)
 
-        optimizer.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        self.optimizer.step()
 
         writer = self.summary_writer
         n = self.num_steps
@@ -299,19 +155,13 @@ class DQN(object):
             writer.add_scalar("qvals/model_max", q_values.max(1)[0].mean().item(), n)
             writer.add_scalar("qvals/target_mean", next_q_values.mean().item(), n)
             writer.add_scalar("qvals/target_max", next_q_value.mean().item(), n)
-            if self.training_aux:
-                writer.add_scalar("aux_agent/reward", self.aux_reward.mean().item(), n)
-            if not self.training_aux:
-                writer.add_scalar("aup_agent/avg_penalty", torch.tensor(self.penalty).mean().item(), n)
-                writer.add_scalar("aup_agent/sum_penalty", torch.tensor(self.penalty).sum().item(), n)
-
-
             writer.flush()
 
     def train(self, steps):
         needs_report = True
-
-        for _ in range(int(steps / len(self.training_envs))):
+        max_steps = steps
+        print ('starting at {} steps'.format(self.num_steps))
+        while self.num_steps < max_steps:
             num_steps = self.num_steps
             next_opt = round_up(num_steps, self.optimize_freq)
             next_update = round_up(num_steps, self.target_update_freq)
@@ -319,17 +169,11 @@ class DQN(object):
             next_report = round_up(num_steps, self.report_freq)
             next_test = round_up(num_steps, self.test_freq)
 
-            if self.num_steps >= self.train_aux_steps and self.switch is False:
-                self.training_aux = False
-                print ('Finished Aux Training, Switching to AUP')
-                self.switch = True
-
             self.collect_data()
 
             num_steps = self.num_steps
 
-            replay_buffer = self.replay_buffer_aux if self.training_aux else self.replay_buffer_aup
-            if len(replay_buffer) < self.replay_initial:
+            if len(self.replay_buffer) < self.replay_initial:
                 continue
 
             if num_steps >= next_report:
@@ -340,18 +184,14 @@ class DQN(object):
                 needs_report = False
 
             if num_steps >= next_update:
-                target_model = self.target_model_aux if self.training_aux else self.target_model_aup
-                model = self.training_model_aux if self.training_aux else self.training_model_aup
-                target_model.load_state_dict(model.state_dict())
+                self.target_model.load_state_dict(self.training_model.state_dict())
 
             if num_steps >= next_checkpoint:
                 checkpointing.save_checkpoint(self.logdir, self, [
-                    'training_model_aux', 'training_model_aup',
-                    'target_model_aux', 'target_model_aup',
-                    'optimizer_aux', 'optimizer_aup'
+                    'training_model', 'target_model', 'optimizer',
                 ])
 
             if num_steps >= next_test:
-                self.run_test_envs()
-
+                if self.testing_envs is not None:
+                    self.run_test_envs()
 

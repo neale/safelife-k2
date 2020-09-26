@@ -59,11 +59,13 @@ class PPO_AUP(object):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
         
-        self.model_aux = model_aux.model_aux.to(self.compute_device)
+        for m in model_aux.model_aux:
+            m.to(self.compute_device)
+        self.model_aux = model_aux.model_aux
         self.optimizer_aux = model_aux.optimizer_aux
         self.model_aup = model_aup.to(self.compute_device)
         self.optimizer_aup = optim.Adam(self.model_aup.parameters(), lr=self.learning_rate_aup)
-        checkpointing.load_checkpoint(self.logdir, self)
+        checkpointing.load_checkpoint(self.logdir, self, aup=True)
         self.exp = env_type
 
         """ AUP-specific parameters """
@@ -84,7 +86,13 @@ class PPO_AUP(object):
         tensor_states = self.tensor(states, dtype=torch.float32)
         values_q, policies = self.model_aup(tensor_states)
         values = values_q.mean(1)
-        values_q_aux, policies_aux = self.model_aux(tensor_states)
+
+        values_q_aux = []
+        policies_aux = []
+        for model in self.model_aux:
+            value_aux, policy_aux = model(tensor_states)
+            values_q_aux.append(value_aux)
+            policies_aux.append(policy_aux)
         
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
@@ -102,9 +110,11 @@ class PPO_AUP(object):
             actions.append(action)
 
             # calculate AUP penalty
-            inaction_value = values_q_aux[i, 0]
-            action_value = values_q_aux[i, action]
-            penalty = (action_value - inaction_value).abs()
+            penalty = 0.
+            for v, p in zip(values_q_aux, policies_aux):
+                inaction_value = v[i, 0]
+                action_value = v[i, action]
+                penalty += (action_value - inaction_value).abs()
             self.scale = inaction_value
             if self.use_scale:
                 scale = inaction_value
@@ -112,6 +122,7 @@ class PPO_AUP(object):
                 scale = 1.
             lamb = self.lamb_schedule.value(self.num_steps)
             self.lamb = lamb
+            penalty = penalty / len(self.model_aux)
             self.penalty = penalty
             reward = reward - lamb * (penalty / scale)
             reward = reward.cpu().tolist()
@@ -272,10 +283,13 @@ class PPO_AUP(object):
                 ], 'aup_')
 
             if n >= next_test:
-                self.run_test_envs()
+                if self.testing_envs is not None:
+                    self.run_test_envs()
         
         # Closing up
-        for env in self.training_envs:
-            env.close()
-        for env in self.testing_envs:
-            env.close()
+        if self.training_envs is not None:
+            for env in self.training_envs:
+                env.close()
+        if self.testing_envs is not None:
+            for env in self.testing_envs:
+                env.close()

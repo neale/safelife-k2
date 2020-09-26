@@ -43,7 +43,7 @@ class PPO_AUX(object):
     reward_clip = 0.0
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    checkpoint_freq = 1000#100000
+    checkpoint_freq = 100000
     num_checkpoints = 3
     report_freq = 960
     test_freq = 100000
@@ -70,12 +70,11 @@ class PPO_AUX(object):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
         
-        self.model_aux = [model_aux.to(self.compute_device) for _ in range(n_rfn)]
-        self.optimizer_aux = [optim.Adam(m.parameters(),
-            lr=self.learning_rate_aux) for m in self.model_aux]
+        self.model_aux = model_aux.to(self.compute_device)
+        self.optimizer_aux = optim.Adam(self.model_aux.parameters(),
+            lr=self.learning_rate_aux)
         self.aux_train_steps = aux_train_steps
         checkpointing.load_checkpoint(self.logdir, self, aux=True)
-        print (self.model_aux)
         self.exp = env_type
         if self.num_steps >= (aux_train_steps-1):
             skip_vae_training = True
@@ -94,14 +93,10 @@ class PPO_AUX(object):
         if not self.is_random_projection and not skip_vae_training:
             self.load_state_encoder = False
             self.state_encoder_path = 'models/{}/model_save_epoch_100.pt'.format(env_type)
-            self.state_encoder = [self.train_state_encoder(
-                envs=self.training_envs) for _ in range(n_rfn)]
+            self.state_encoder = self.train_state_encoder(
+                envs=self.training_envs)
 
-        for model in self.model_aux:
-            model.register_reward_function(
-                    dim=self.z_dim,
-                    projection=self.is_random_projection,
-                    device=self.compute_device)
+        self.register_random_reward_functions()
         
     def tensor(self, data, dtype):
         data = np.asanyarray(data)
@@ -143,13 +138,14 @@ class PPO_AUX(object):
         states = torch.stack(states)
         if self.is_random_projection:
             states = states.cuda()
-            random_projection = model.random_fn.transpose(2, 3)
-            rewards = torch.einsum('abcd, abde -> abce', states, random_projection)
-            rewards = rewards.view(rewards.size(0), -1).sum(1)
+            if self.n_random_reward_fns == 1:
+                random_projection = self.random_projection.transpose(2, 3)
+                rewards = torch.einsum('abcd, abde -> abce', states, random_projection)
+                rewards = rewards.view(rewards.size(0), -1).sum(1)
         else:
             state_encoder.eval()
             states_z = encode_state(state_encoder, states, self.compute_device)
-            rewards = torch.mm(states_z, model.random_fn.T)
+            rewards = torch.mm(states_z, self.random_fns.T)
         return rewards
     
 
@@ -271,7 +267,7 @@ class PPO_AUX(object):
             ]
 
     @named_output('states actions action_prob returns advantages values')
-    def gen_training_batch(self, steps_per_env, model, state_encoder, update_steps=False, flat=True):
+    def gen_training_batch(self, steps_per_env, model, state_encoder, flat=True):
         """
         Run each environment a number of steps and calculate advantages.
 
@@ -321,9 +317,10 @@ class PPO_AUX(object):
                 x = np.asanyarray(x)
                 x = x.reshape(-1, *x.shape[2:])
             return self.tensor(x, dtype=dtype)
-        if update_steps:
-            self.num_steps += actions.size
+        
+        self.num_steps += actions.size
         self.num_episodes += np.sum(done)
+        
         return (
                 t([s.states for s in steps]), t(actions, torch.int64),
                 t(probs), t(returns), t(advantages), t(values[:-1]),
@@ -376,47 +373,41 @@ class PPO_AUX(object):
             next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)
             next_report = round_up(self.num_steps, self.report_freq)
             next_test = round_up(self.num_steps, self.test_freq)
-            n = self.num_steps
             
-            for i, (model, optim, state_encoder) in enumerate(zip(
-                self.model_aux,
-                self.optimizer_aux,
-                self.state_encoder)):
+            batch = self.gen_training_batch(
+                    self.steps_per_env,
+                    model=self.model_aux,
+                    state_encoder=self.state_encoder,
+                    )
+            self.train_batch(self.model_aux, batch, self.optimizer_aux)
+            
+            n = self.num_steps
 
-                update_steps = (i == len(self.model_aux)-1)
-                batch = self.gen_training_batch(
-                        self.steps_per_env,
-                        model=model,
-                        state_encoder=state_encoder,
-                        update_steps=update_steps)
-                self.train_batch(model, batch, optim)
-
+            if n >= next_report and self.summary_writer is not None:
+                writer = self.summary_writer
+                entropy, loss = self.calculate_loss(self.model_aux,
+                    batch.states, batch.actions, batch.action_prob,
+                    batch.values, batch.returns, batch.advantages)
+                loss = loss.item()
+                entropy = entropy.mean().item()
+                values = batch.values.mean().item()
+                advantages = batch.advantages.mean().item()
                 
-                if n >= next_report and self.summary_writer is not None:
-                    writer = self.summary_writer
-                    entropy, loss = self.calculate_loss(model,
-                        batch.states, batch.actions, batch.action_prob,
-                        batch.values, batch.returns, batch.advantages)
-                    loss = loss.item()
-                    entropy = entropy.mean().item()
-                    values = batch.values.mean().item()
-                    advantages = batch.advantages.mean().item()
-                    
-                    aux_reward = self.aux_rewards.mean().item()
+                aux_reward = self.aux_rewards.mean().item()
 
-                    logger.info(
-                        "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, aux_r=%0.3f",
-                        n, loss, entropy, values, advantages, aux_reward)
-                    writer.add_scalar("training/{}/loss".format(i), loss, n)
-                    writer.add_scalar("training/{}/entropy".format(i), entropy, n)
-                    writer.add_scalar("training/{}/values".format(i), values, n)
-                    writer.add_scalar("training/{}/advantages".format(i), advantages, n)
-                    writer.add_scalar("training/{}/aux_reward".format(i), aux_reward, n)
-                    writer.flush()
+                logger.info(
+                    "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g, aux_r=%0.3f",
+                    n, loss, entropy, values, advantages, aux_reward)
+                writer.add_scalar("training/loss", loss, n)
+                writer.add_scalar("training/entropy", entropy, n)
+                writer.add_scalar("training/values", values, n)
+                writer.add_scalar("training/advantages", advantages, n)
+                writer.add_scalar("training/aux_reward", aux_reward, n)
+                writer.flush()
 
-                if n >= next_test:
-                    if self.testing_envs is not None:
-                        self.run_test_envs(model, state_encoder)
+            if n >= next_test:
+                if self.testing_envs is not None:
+                    self.run_test_envs(model, state_encoder)
 
             if n >= next_checkpoint:
                 checkpointing.save_checkpoint(self.logdir, self, [

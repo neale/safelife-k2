@@ -181,11 +181,12 @@ class RecordingSafeLifeWrapper(BaseWrapper):
     log_file = None
     video_name = None
     video_recorder = None
-    video_recording_freq = 100
+    video_recording_freq = 1e10
     record_side_effects = True
     tag = "episodes/"
     other_episode_data = {}
     exclude = ()
+    recording_enabled = False
 
     def log_episode(self):
         if self.global_counter is not None:
@@ -291,8 +292,13 @@ class RecordingSafeLifeWrapper(BaseWrapper):
                 # If the video name already exists, add a counter to it.
                 idx += 1
                 path = p0 + " ({})".format(idx)
-            self.video_recorder = SafeLifeRecorder(env=self.env, base_path=path)
-            self.video_recorder.capture_frame()
+            if self.recording_enabled:
+                self.video_recorder = SafeLifeRecorder(
+                        env=self.env,
+                        base_path=path)
+                self.video_recorder.capture_frame()
+            else:
+                self.video_recorder = None
 
     def __del__(self):
         # Make sure we've closed up shop when garbage collecting

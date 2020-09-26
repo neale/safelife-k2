@@ -10,7 +10,14 @@ plays
 8env_append-still/
 8env_append-still-easy/
 16env_append-still-easy/
+16env_append-still-easy1/
+16env_append-still-easy2/
+16env_append-still-easy3/
 32env_append-still-easy/
+32env_append-still-easy1/
+32env_append-still-easy2/
+32env_append-still-easy3/
+
 buffers/
 build/
 gcloud/
@@ -28,4 +35,9 @@ results_ppo/
 aesults_short/
 csv_output/
 level_sets/
+results-aup-envs/
+results-blinky
+results-continue-main15/
+results-dqn-mainset/
+results-ppo-envs/
 
